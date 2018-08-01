@@ -36,19 +36,19 @@ import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.support.v7.widget.GridLayoutManager;
-import android.support.v7.widget.GridLayoutManager.SpanSizeLookup;
 import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.Log;
 import android.view.View;
 
+import androidx.car.widget.PagedListView;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-
-import androidx.car.widget.PagedListView;
 
 /**
  * Launcher activity that shows a grid of apps.
@@ -201,11 +201,17 @@ public final class AppGridActivity extends Activity {
         int statsSize = stats.size();
         int itemCount = Math.min(mColumnNumber, statsSize);
         while (itemsAdded < itemCount && currentIndex < statsSize) {
-            String packageName = stats.get(currentIndex).getPackageName();
+            UsageStats usageStats = stats.get(currentIndex);
+            String packageName = usageStats.getPackageName();
             currentIndex++;
 
             // do not include self
             if (packageName.equals(getPackageName())) {
+                continue;
+            }
+
+            // do not include apps that only ran in the background
+            if (usageStats.getTotalTimeInForeground() == 0) {
                 continue;
             }
 
