@@ -30,10 +30,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
-import android.content.pm.ActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -45,8 +43,9 @@ import androidx.car.widget.PagedListView;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup;
 
+import com.android.car.carlauncher.AppLauncherUtils.LauncherAppsInfo;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -82,9 +81,7 @@ public final class AppGridActivity extends Activity {
                                         restrictionInfo.isRequiresDistractionOptimization()));
 
                 mCarPackageManager = (CarPackageManager) mCar.getCarManager(Car.PACKAGE_SERVICE);
-                mGridAdapter.setAllApps(getAllApps());
-                mGridAdapter.setMostRecentApps(getMostRecentApps());
-
+                updateAppsLists();
             } catch (CarNotConnectedException e) {
                 Log.e(TAG, "Car not connected in CarConnectionListener", e);
             }
@@ -132,10 +129,17 @@ public final class AppGridActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        mGridAdapter.setAllApps(getAllApps());
-        // using onResume() to refresh most recently used apps because we want to refresh even if
+        // Using onResume() to refresh most recently used apps because we want to refresh even if
         // the app being launched crashes/doesn't cover the entire screen.
-        mGridAdapter.setMostRecentApps(getMostRecentApps());
+        updateAppsLists();
+    }
+
+    /** Updates the list of all apps, and the list of the most recently used ones. */
+    private void updateAppsLists() {
+        LauncherAppsInfo appsInfo = AppLauncherUtils.getAllLauncherApps(
+                getSystemService(LauncherApps.class), mCarPackageManager, mPackageManager);
+        mGridAdapter.setAllApps(appsInfo.getApplicationsList());
+        mGridAdapter.setMostRecentApps(getMostRecentApps(appsInfo));
     }
 
     @Override
@@ -180,8 +184,11 @@ public final class AppGridActivity extends Activity {
      * Note that in order to obtain usage stats from the previous boot,
      * the device must have gone through a clean shut down process.
      */
-    private List<AppMetaData> getMostRecentApps() {
+    private List<AppMetaData> getMostRecentApps(LauncherAppsInfo appsInfo) {
         ArrayList<AppMetaData> apps = new ArrayList<>();
+        if (appsInfo.isEmpty()) {
+            return apps;
+        }
 
         // get the usage stats starting from 1 year ago with a INTERVAL_YEARLY granularity
         // returning entries like:
@@ -198,7 +205,7 @@ public final class AppGridActivity extends Activity {
             return apps; // empty list
         }
 
-        Collections.sort(stats, new LastTimeUsedComparator());
+        stats.sort(new LastTimeUsedComparator());
 
         int currentIndex = 0;
         int itemsAdded = 0;
@@ -206,7 +213,7 @@ public final class AppGridActivity extends Activity {
         int itemCount = Math.min(mColumnNumber, statsSize);
         while (itemsAdded < itemCount && currentIndex < statsSize) {
             UsageStats usageStats = stats.get(currentIndex);
-            String packageName = usageStats.getPackageName();
+            String packageName = usageStats.mPackageName;
             currentIndex++;
 
             // do not include self
@@ -214,41 +221,26 @@ public final class AppGridActivity extends Activity {
                 continue;
             }
 
-            // do not include apps that only ran in the background
-            if (usageStats.getTotalTimeInForeground() == 0) {
-                continue;
-            }
-
-            // do not include apps that don't support starting from launcher
-            Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
-            if (intent == null || !intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
-                continue;
-            }
-
-            try {
-                // try getting activity info from package name
-                Drawable icon = mPackageManager.getActivityIcon(intent);
-                ActivityInfo info = mPackageManager.getActivityInfo(intent.getComponent(), 0);
-                CharSequence displayName = info.loadLabel(mPackageManager);
-                if (icon == null || TextUtils.isEmpty(displayName)) {
-                    continue;
-                }
-                boolean isDistractionOptimized = AppLauncherUtils.isActivityDistractionOptimized(
-                        mCarPackageManager, packageName, intent.getComponent().getClassName());
-                AppMetaData app =
-                        new AppMetaData(displayName, packageName, icon, isDistractionOptimized);
-
-                // edge case: do not include duplicated entries
-                // e.g. app is used at 2017/12/31 23:59, and 2018/01/01 00:00
-                if (apps.contains(app)) {
+            // Exempt media services from background and launcher checks
+            if (!appsInfo.isMediaService(packageName)) {
+                // do not include apps that only ran in the background
+                if (usageStats.getTotalTimeInForeground() == 0) {
                     continue;
                 }
 
+                // do not include apps that don't support starting from launcher
+                Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
+                if (intent == null || !intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+                    continue;
+                }
+            }
+
+            AppMetaData app = appsInfo.getAppMetaData(packageName);
+            // Prevent duplicated entries
+            // e.g. app is used at 2017/12/31 23:59, and 2018/01/01 00:00
+            if (app != null && !apps.contains(app)) {
                 apps.add(app);
                 itemsAdded++;
-            } catch (PackageManager.NameNotFoundException e) {
-                // this should never happen
-                Log.e(TAG, "NameNotFoundException when getting app icon in AppGridActivity", e);
             }
         }
         return apps;
@@ -267,11 +259,6 @@ public final class AppGridActivity extends Activity {
         }
     }
 
-    private List<AppMetaData> getAllApps() {
-        return AppLauncherUtils.getAllLaunchableApps(
-                getSystemService(LauncherApps.class), mCarPackageManager, mPackageManager);
-    }
-
     private class AppInstallUninstallReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -282,7 +269,7 @@ public final class AppGridActivity extends Activity {
                 return;
             }
 
-            mGridAdapter.setAllApps(getAllApps());
+            updateAppsLists();
         }
     }
 }
