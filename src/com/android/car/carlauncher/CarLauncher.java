@@ -26,6 +26,7 @@ import android.os.Bundle;
 import android.os.IRemoteCallback;
 import android.os.RemoteException;
 import android.util.Log;
+import android.widget.FrameLayout;
 
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentTransaction;
@@ -75,38 +76,32 @@ public class CarLauncher extends FragmentActivity {
                 @Override
                 public void onTaskMovedToFront(int taskId) {
                     try {
-                        if (!mIsStarted) {
-                            ActivityManager.getService().moveTaskToFront(
-                                    CarLauncher.this.getTaskId(), /* flags= */ 0, /* options= */
-                                    null);
+                        if (mIsStarted) {
+                            ActivityManager am =
+                                    (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                            am.moveTaskToFront(CarLauncher.this.getTaskId(), /* flags= */ 0);
                         }
-                    } catch (RemoteException e) {
+                    } catch (RuntimeException e) {
                         Log.w(TAG, "Failed to move CarLauncher to front.");
                     }
                 }
             };
 
-    private final UserSwitchObserver mUserSwitchObserver = new UserSwitchObserver() {
-        @Override
-        public void onUserSwitching(int newUserId, IRemoteCallback reply) throws RemoteException {
-            super.onUserSwitching(newUserId, reply);
-            CarLauncher.this.finish();
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.car_launcher);
+        // Don't show the maps panel in multi window mode.
+        // NOTE: CTS tests for split screen are not compatible with activity views on the default
+        // activity of the launcher
+        if (isInMultiWindowMode() || isInPictureInPictureMode()) {
+            setContentView(R.layout.car_launcher_multiwindow);
+        } else {
+            setContentView(R.layout.car_launcher);
+        }
         initializeFragments();
         mActivityView = findViewById(R.id.maps);
-        mActivityView.setCallback(mActivityViewCallback);
-
-        try {
-            ActivityManager.getService().registerUserSwitchObserver(mUserSwitchObserver,
-                    getLocalClassName());
-        } catch (RemoteException e) {
-            Log.e(TAG, "Failed to register user switch observer", e);
+        if (mActivityView != null) {
+            mActivityView.setCallback(mActivityViewCallback);
         }
     }
 
@@ -140,21 +135,20 @@ public class CarLauncher extends FragmentActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            ActivityManager.getService().unregisterUserSwitchObserver(mUserSwitchObserver);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Failed to unregister user switch observer", e);
-        }
-        if (mActivityViewReady) {
+        if (mActivityView != null && mActivityViewReady) {
             mActivityView.release();
         }
     }
 
     private void startMapsInActivityView() {
-        if (!mActivityViewReady) {
+        // If we happen to be be resurfaced into a multi display mode we skip launching content
+        // in the activity view as we will get recreated anyway.
+        if (!mActivityViewReady || isInMultiWindowMode() || isInPictureInPictureMode()) {
             return;
         }
-        mActivityView.startActivity(getMapsIntent());
+        if (mActivityView != null) {
+            mActivityView.startActivity(getMapsIntent());
+        }
     }
 
     private void launchMapsActivity() {
@@ -177,11 +171,18 @@ public class CarLauncher extends FragmentActivity {
 
     private void initializeFragments() {
         PlaybackFragment playbackFragment = new PlaybackFragment();
-        ContextualFragment contextualFragment = new ContextualFragment();
+        ContextualFragment contextualFragment = null;
+        FrameLayout contextual = findViewById(R.id.contextual);
+        if(contextual != null) {
+            contextualFragment = new ContextualFragment();
+        }
+
         FragmentTransaction fragmentTransaction =
                 getSupportFragmentManager().beginTransaction();
         fragmentTransaction.replace(R.id.playback, playbackFragment);
-        fragmentTransaction.replace(R.id.contextual, contextualFragment);
+        if(contextual != null) {
+            fragmentTransaction.replace(R.id.contextual, contextualFragment);
+        }
         fragmentTransaction.commitNow();
     }
 }
