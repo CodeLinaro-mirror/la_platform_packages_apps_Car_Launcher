@@ -17,14 +17,11 @@
 package com.android.car.carlauncher;
 
 import android.app.ActivityManager;
-import android.app.ActivityOptions;
 import android.app.ActivityView;
-import android.app.UserSwitchObserver;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
-import android.os.IRemoteCallback;
-import android.os.RemoteException;
 import android.util.Log;
 import android.widget.FrameLayout;
 
@@ -32,8 +29,6 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentTransaction;
 
 import com.android.car.media.common.PlaybackFragment;
-
-import java.util.Set;
 
 /**
  * Basic Launcher for Android Automotive which demonstrates the use of {@link ActivityView} to host
@@ -60,12 +55,16 @@ public class CarLauncher extends FragmentActivity {
     private boolean mActivityViewReady = false;
     private boolean mIsStarted = false;
 
+    /** Set to {@code true} once we've logged that the Activity is fully drawn. */
+    private boolean mIsReadyLogged = false;
+
     private final ActivityView.StateCallback mActivityViewCallback =
             new ActivityView.StateCallback() {
                 @Override
                 public void onActivityViewReady(ActivityView view) {
                     mActivityViewReady = true;
                     startMapsInActivityView();
+                    maybeLogReady();
                 }
 
                 @Override
@@ -106,15 +105,6 @@ public class CarLauncher extends FragmentActivity {
     }
 
     @Override
-    protected void onNewIntent(Intent intent) {
-        Set<String> categories = intent.getCategories();
-        if (categories != null && categories.size() == 1 && categories.contains(
-                Intent.CATEGORY_APP_MAPS)) {
-            launchMapsActivity();
-        }
-    }
-
-    @Override
     protected void onRestart() {
         super.onRestart();
         startMapsInActivityView();
@@ -124,6 +114,7 @@ public class CarLauncher extends FragmentActivity {
     protected void onStart() {
         super.onStart();
         mIsStarted = true;
+        maybeLogReady();
     }
 
     @Override
@@ -147,16 +138,12 @@ public class CarLauncher extends FragmentActivity {
             return;
         }
         if (mActivityView != null) {
-            mActivityView.startActivity(getMapsIntent());
+            try {
+                mActivityView.startActivity(getMapsIntent());
+            } catch (ActivityNotFoundException e) {
+                Log.w(TAG, "Maps activity not found", e);
+            }
         }
-    }
-
-    private void launchMapsActivity() {
-        // Make sure the Activity launches on the current display instead of in the ActivityView
-        // virtual display.
-        final ActivityOptions options = ActivityOptions.makeBasic();
-        options.setLaunchDisplayId(getDisplay().getDisplayId());
-        startActivity(getMapsIntent(), options.toBundle());
     }
 
     private Intent getMapsIntent() {
@@ -173,16 +160,24 @@ public class CarLauncher extends FragmentActivity {
         PlaybackFragment playbackFragment = new PlaybackFragment();
         ContextualFragment contextualFragment = null;
         FrameLayout contextual = findViewById(R.id.contextual);
-        if(contextual != null) {
+        if (contextual != null) {
             contextualFragment = new ContextualFragment();
         }
 
         FragmentTransaction fragmentTransaction =
                 getSupportFragmentManager().beginTransaction();
         fragmentTransaction.replace(R.id.playback, playbackFragment);
-        if(contextual != null) {
+        if (contextual != null) {
             fragmentTransaction.replace(R.id.contextual, contextualFragment);
         }
         fragmentTransaction.commitNow();
+    }
+
+    /** Logs that the Activity is ready. Used for startup time diagnostics. */
+    private void maybeLogReady() {
+        if (mActivityViewReady && !mIsReadyLogged) {
+            reportFullyDrawn();
+            mIsReadyLogged = true;
+        }
     }
 }
