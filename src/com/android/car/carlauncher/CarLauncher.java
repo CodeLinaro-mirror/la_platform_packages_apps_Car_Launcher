@@ -20,7 +20,9 @@ import android.app.ActivityManager;
 import android.app.ActivityView;
 import android.car.app.CarActivityView;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManager.DisplayListener;
@@ -29,26 +31,39 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Display;
-import android.widget.FrameLayout;
 
+import androidx.collection.ArraySet;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentTransaction;
+import androidx.lifecycle.ViewModelProvider;
 
-import com.android.car.media.common.PlaybackFragment;
+import com.android.car.carlauncher.homescreen.HomeCardModule;
+
+import java.net.URISyntaxException;
+import java.util.Set;
 
 /**
  * Basic Launcher for Android Automotive which demonstrates the use of {@link ActivityView} to host
- * maps content.
+ * maps content and uses a Model-View-Presenter structure to display content in cards.
+ *
+ * <p>Implementations of the Launcher that use the given layout of the main activity
+ * (car_launcher.xml) can customize the home screen cards by providing their own
+ * {@link HomeCardModule} for R.id.top_card or R.id.bottom_card. Otherwise, implementations that
+ * use their own layout should define their own activity rather than using this one.
  *
  * <p>Note: On some devices, the ActivityView may render with a width, height, and/or aspect
  * ratio that does not meet Android compatibility definitions. Developers should work with content
  * owners to ensure content renders correctly when extending or emulating this class.
  *
- * <p>Note: Since the hosted maps Activity in ActivityView is currently in a virtual display, the
- * system considers the Activity to always be in front. Launching the maps Activity with a direct
- * Intent will not work. To start the maps Activity on the real display, send the Intent to the
- * Launcher with the {@link Intent#CATEGORY_APP_MAPS} category, and the launcher will start the
- * Activity on the real display.
+ * <p>Note: By default, ActivityView will host the default handler Activity for maps. Since the
+ * hosted Activity in ActivityView is in a virtual display, the system considers the Activity to
+ * always be in front. Launching the maps Activity with a direct Intent will not work.
+ * To start the maps Activity on the real display, send the Intent to the Launcher with the
+ * {@link Intent#CATEGORY_APP_MAPS} category, and the launcher will start the Activity on the real
+ * display. Alternatively, a maps application may provide a separate activity dedicated for hosting
+ * in ActivityView. Use {@link R.array.config_homeCardPreferredMapActivities} to create a mapping
+ * of applications to intents that will be used to launch the preferred Activity provided by the
+ * default handler application for maps.
  *
  * <p>Note: The state of the virtual display in the ActivityView is nondeterministic when
  * switching away from and back to the current user. To avoid a crash, this Activity will finish
@@ -63,6 +78,7 @@ public class CarLauncher extends FragmentActivity {
     private boolean mIsStarted;
     private DisplayManager mDisplayManager;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    private Set<HomeCardModule> mHomeCardModules;
 
     /** Set to {@code true} once we've logged that the Activity is fully drawn. */
     private boolean mIsReadyLogged;
@@ -103,9 +119,12 @@ public class CarLauncher extends FragmentActivity {
 
     private final DisplayListener mDisplayListener = new DisplayListener() {
         @Override
-        public void onDisplayAdded(int displayId) {}
+        public void onDisplayAdded(int displayId) {
+        }
+
         @Override
-        public void onDisplayRemoved(int displayId) {}
+        public void onDisplayRemoved(int displayId) {
+        }
 
         @Override
         public void onDisplayChanged(int displayId) {
@@ -128,7 +147,7 @@ public class CarLauncher extends FragmentActivity {
         } else {
             setContentView(R.layout.car_launcher);
         }
-        initializeFragments();
+        initializeCards();
         mActivityView = findViewById(R.id.maps);
         if (mActivityView != null) {
             mActivityView.setCallback(mActivityViewCallback);
@@ -186,30 +205,67 @@ public class CarLauncher extends FragmentActivity {
     }
 
     private Intent getMapsIntent() {
-        return Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MAPS);
+        Intent defaultIntent =
+                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MAPS);
+        PackageManager pm = getPackageManager();
+        ComponentName defaultActivity = defaultIntent.resolveActivity(pm);
+
+        for (String intentUri : getResources().getStringArray(
+                R.array.config_homeCardPreferredMapActivities)) {
+            Intent preferredIntent;
+            try {
+                preferredIntent = Intent.parseUri(intentUri, Intent.URI_ANDROID_APP_SCHEME);
+            } catch (URISyntaxException se) {
+                Log.w(TAG, "Invalid intent URI in config_homeCardPreferredMapActivities", se);
+                continue;
+            }
+
+            if (defaultActivity != null && !defaultActivity.getPackageName().equals(
+                    preferredIntent.getPackage())) {
+                continue;
+            }
+
+            if (preferredIntent.resolveActivityInfo(pm, /* flags= */ 0) != null) {
+                return preferredIntent;
+            }
+        }
+
+        return defaultIntent;
     }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        initializeFragments();
+        initializeCards();
     }
 
-    private void initializeFragments() {
-        PlaybackFragment playbackFragment = new PlaybackFragment();
-        ContextualFragment contextualFragment = null;
-        FrameLayout contextual = findViewById(R.id.contextual);
-        if (contextual != null) {
-            contextualFragment = new ContextualFragment();
+    private void initializeCards() {
+        if (mHomeCardModules == null) {
+            mHomeCardModules = new ArraySet<>();
+            for (String providerClassName : getResources().getStringArray(
+                    R.array.config_homeCardModuleClasses)) {
+                try {
+                    long reflectionStartTime = System.currentTimeMillis();
+                    HomeCardModule cardModule = (HomeCardModule) Class.forName(
+                            providerClassName).newInstance();
+                    cardModule.setViewModelProvider(new ViewModelProvider( /* owner= */this));
+                    mHomeCardModules.add(cardModule);
+                    if (DEBUG) {
+                        long reflectionTime = System.currentTimeMillis() - reflectionStartTime;
+                        Log.d(TAG, "Initialization of HomeCardModule class " + providerClassName
+                                + " took " + reflectionTime + " ms");
+                    }
+                } catch (IllegalAccessException | InstantiationException |
+                        ClassNotFoundException e) {
+                    Log.w(TAG, "Unable to create HomeCardProvider class " + providerClassName, e);
+                }
+            }
         }
-
-        FragmentTransaction fragmentTransaction =
-                getSupportFragmentManager().beginTransaction();
-        fragmentTransaction.replace(R.id.playback, playbackFragment);
-        if (contextual != null) {
-            fragmentTransaction.replace(R.id.contextual, contextualFragment);
+        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+        for (HomeCardModule cardModule : mHomeCardModules) {
+            transaction.replace(cardModule.getCardResId(), cardModule.getCardView());
         }
-        fragmentTransaction.commitNow();
+        transaction.commitNow();
     }
 
     /** Logs that the Activity is ready. Used for startup time diagnostics. */
@@ -219,13 +275,13 @@ public class CarLauncher extends FragmentActivity {
                     + ", started=" + mIsStarted + ", alreadyLogged: " + mIsReadyLogged);
         }
         if (mActivityViewReady && mIsStarted) {
-            // We should report everytime - the Android framework will take care of logging just
-            // when it's effectivelly drawn for the first time, but....
+            // We should report every time - the Android framework will take care of logging just
+            // when it's effectively drawn for the first time, but....
             reportFullyDrawn();
             if (!mIsReadyLogged) {
                 // ... we want to manually check that the Log.i below (which is useful to show
-                // the user id) is only logged once (otherwise it would be logged everytime the user
-                // taps Home)
+                // the user id) is only logged once (otherwise it would be logged every time the
+                // user taps Home)
                 Log.i(TAG, "Launcher for user " + getUserId() + " is ready");
                 mIsReadyLogged = true;
             }

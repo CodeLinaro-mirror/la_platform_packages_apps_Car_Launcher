@@ -233,8 +233,8 @@ public final class AppGridActivity extends Activity implements InsetsChangedList
 
     /** Updates the list of all apps, and the list of the most recently used ones. */
     private void updateAppsLists() {
-        Set<String> blackList = mShowAllApps ? Collections.emptySet() : mHiddenApps;
-        LauncherAppsInfo appsInfo = AppLauncherUtils.getLauncherApps(blackList,
+        Set<String> appsToHide = mShowAllApps ? Collections.emptySet() : mHiddenApps;
+        LauncherAppsInfo appsInfo = AppLauncherUtils.getLauncherApps(appsToHide,
                 mCustomMediaComponents,
                 mMode.mAppTypes,
                 mMode.mOpenMediaCenter,
@@ -360,6 +360,7 @@ public final class AppGridActivity extends Activity implements InsetsChangedList
                 .setPadding(0, insets.getTop(), 0, insets.getBottom());
         FocusArea focusArea = requireViewById(R.id.focus_area);
         focusArea.setHighlightPadding(0, insets.getTop(), 0, insets.getBottom());
+        focusArea.setBoundsOffset(0, insets.getTop(), 0, insets.getBottom());
 
         requireViewById(android.R.id.content)
                 .setPadding(insets.getLeft(), 0, insets.getRight(), 0);
