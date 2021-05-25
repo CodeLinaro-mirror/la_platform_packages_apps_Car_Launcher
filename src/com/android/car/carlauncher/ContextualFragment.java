@@ -34,7 +34,6 @@ public class ContextualFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.contextual_fragment, container, false);
-        View card = rootView.findViewById(R.id.card);
         ImageView iconView = rootView.findViewById(R.id.icon);
         TextView topLineView = rootView.findViewById(R.id.top_line);
         TextView bottomLineView = rootView.findViewById(R.id.bottom_line);
@@ -72,8 +71,8 @@ public class ContextualFragment extends Fragment {
                     onClickActivity != null
                             ? v -> startActivity(info.getOnClickActivity())
                             : null;
-            card.setOnClickListener(listener);
-            card.setClickable(listener != null);
+            rootView.setOnClickListener(listener);
+            rootView.setClickable(listener != null);
         });
 
         return rootView;
