@@ -201,7 +201,7 @@ public class CarLauncher extends FragmentActivity {
             mTaskView.startActivity(
                     PendingIntent.getActivity(this, /* requestCode= */ 0, getMapsIntent(),
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT),
-                    /* fillInIntent= */ null, options, null /* launchBounds */);
+                    /* fillInIntent= */ null, options);
         } catch (ActivityNotFoundException e) {
             Log.w(TAG, "Maps activity not found", e);
         }

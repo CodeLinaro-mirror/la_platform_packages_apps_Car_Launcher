@@ -69,7 +69,7 @@ import java.util.Set;
 /**
  * Launcher activity that shows a grid of apps.
  */
-public class AppGridActivity extends Activity implements InsetsChangedListener {
+public final class AppGridActivity extends Activity implements InsetsChangedListener {
     private static final String TAG = "AppGridActivity";
     private static final String MODE_INTENT_EXTRA = "com.android.car.carlauncher.mode";
 
