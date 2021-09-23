@@ -19,32 +19,41 @@ package com.android.car.carlauncher;
 import static android.app.ActivityTaskManager.INVALID_TASK_ID;
 import static android.view.WindowManager.LayoutParams.PRIVATE_FLAG_TRUSTED_OVERLAY;
 
+import static com.android.wm.shell.ShellTaskOrganizer.TASK_LISTENER_TYPE_FULLSCREEN;
+
 import android.app.ActivityOptions;
 import android.app.ActivityTaskManager;
 import android.app.PendingIntent;
+import android.app.TaskInfo;
 import android.app.TaskStackListener;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Display;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.window.TaskAppearedInfo;
 
 import androidx.collection.ArraySet;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentTransaction;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.android.car.carlauncher.displayarea.CarDisplayAreaController;
+import com.android.car.carlauncher.displayarea.CarDisplayAreaOrganizer;
+import com.android.car.carlauncher.displayarea.CarFullscreenTaskListener;
 import com.android.car.carlauncher.homescreen.HomeCardModule;
 import com.android.car.internal.common.UserHelperLite;
+import com.android.wm.shell.ShellTaskOrganizer;
 import com.android.wm.shell.TaskView;
 import com.android.wm.shell.common.HandlerExecutor;
+import com.android.wm.shell.startingsurface.StartingWindowController;
+import com.android.wm.shell.startingsurface.phone.PhoneStartingWindowTypeAlgorithm;
 
-import java.net.URISyntaxException;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -64,7 +73,6 @@ public class CarLauncher extends FragmentActivity {
     public static final String TAG = "CarLauncher";
     private static final boolean DEBUG = false;
 
-    private TaskViewManager mTaskViewManager;
     private TaskView mTaskView;
     private boolean mTaskViewReady;
     // Tracking this to check if the task in TaskView has crashed in the background.
@@ -78,7 +86,7 @@ public class CarLauncher extends FragmentActivity {
     private boolean mIsReadyLogged;
 
     // The callback methods in {@code mTaskViewListener} are running under MainThread.
-    private final TaskView.Listener mTaskViewListener =  new TaskView.Listener() {
+    private final TaskView.Listener mTaskViewListener = new TaskView.Listener() {
         @Override
         public void onInitialized() {
             if (DEBUG) Log.d(TAG, "onInitialized(" + getUserId() + ")");
@@ -124,6 +132,37 @@ public class CarLauncher extends FragmentActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // If policy provider is defined then AppGridActivity should be launched.
+        // TODO: update this code flow. Maybe have some kind of configurable activity.
+        if (CarLauncherUtils.isCustomDisplayPolicyDefined(this)) {
+            CarLauncherApplication application = (CarLauncherApplication) getApplication();
+
+            ShellTaskOrganizer taskOrganizer = new ShellTaskOrganizer(
+                    application.getShellExecutor(), this);
+            CarFullscreenTaskListener fullscreenTaskListener = new CarFullscreenTaskListener(
+                    this, application.getSyncTransactionQueue(),
+                    CarDisplayAreaController.getInstance());
+            taskOrganizer.addListenerForType(fullscreenTaskListener, TASK_LISTENER_TYPE_FULLSCREEN);
+            StartingWindowController startingController =
+                    new StartingWindowController(this, application.getShellExecutor(),
+                            new PhoneStartingWindowTypeAlgorithm(),
+                            application.getTransactionPool());
+            taskOrganizer.initStartingWindow(startingController);
+            List<TaskAppearedInfo> taskAppearedInfos = taskOrganizer.registerOrganizer();
+            try {
+                cleanUpExistingTaskViewTasks(taskAppearedInfos);
+            } catch (Exception ex) {
+                Log.w(TAG, "some of the tasks couldn't be cleaned up: ", ex);
+            }
+            CarDisplayAreaController carDisplayAreaController =
+                    CarDisplayAreaController.getInstance();
+            CarDisplayAreaOrganizer org = carDisplayAreaController.getOrganizer();
+            org.startControlBarInDisplayArea();
+            org.startMapsInBackGroundDisplayArea();
+            startActivity(new Intent(this, AppGridActivity.class));
+            return;
+        }
+
         mCarLauncherTaskId = getTaskId();
         ActivityTaskManager.getInstance().registerTaskStackListener(mTaskStackListener);
 
@@ -150,10 +189,18 @@ public class CarLauncher extends FragmentActivity {
         initializeCards();
     }
 
+    private static void cleanUpExistingTaskViewTasks(List<TaskAppearedInfo> taskAppearedInfos) {
+        ActivityTaskManager atm = ActivityTaskManager.getInstance();
+        for (TaskAppearedInfo taskAppearedInfo : taskAppearedInfos) {
+            TaskInfo taskInfo = taskAppearedInfo.getTaskInfo();
+            atm.removeTask(taskInfo.taskId);
+        }
+    }
+
     private void setUpTaskView(ViewGroup parent) {
-        mTaskViewManager = new TaskViewManager(this,
+        TaskViewManager taskViewManager = new TaskViewManager(this,
                 new HandlerExecutor(getMainThreadHandler()));
-        mTaskViewManager.createTaskView(taskView -> {
+        taskViewManager.createTaskView(taskView -> {
             taskView.setListener(getMainExecutor(), mTaskViewListener);
             parent.addView(taskView);
             mTaskView = taskView;
@@ -211,40 +258,13 @@ public class CarLauncher extends FragmentActivity {
             // ActivityStack. This option only effects the host Activity is in resumed.
             options.setTaskAlwaysOnTop(true);
             mTaskView.startActivity(
-                    PendingIntent.getActivity(this, /* requestCode= */ 0, getMapsIntent(),
+                    PendingIntent.getActivity(this, /* requestCode= */ 0,
+                            CarLauncherUtils.getMapsIntent(this),
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT),
                     /* fillInIntent= */ null, options, null /* launchBounds */);
         } catch (ActivityNotFoundException e) {
             Log.w(TAG, "Maps activity not found", e);
         }
-    }
-
-    private Intent getMapsIntent() {
-        Intent defaultIntent =
-                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MAPS);
-        PackageManager pm = getPackageManager();
-        ComponentName defaultActivity = defaultIntent.resolveActivity(pm);
-
-        for (String intentUri : getResources().getStringArray(
-                R.array.config_homeCardPreferredMapActivities)) {
-            Intent preferredIntent;
-            try {
-                preferredIntent = Intent.parseUri(intentUri, Intent.URI_ANDROID_APP_SCHEME);
-            } catch (URISyntaxException se) {
-                Log.w(TAG, "Invalid intent URI in config_homeCardPreferredMapActivities", se);
-                continue;
-            }
-
-            if (defaultActivity != null && !defaultActivity.getPackageName().equals(
-                    preferredIntent.getPackage())) {
-                continue;
-            }
-
-            if (preferredIntent.resolveActivityInfo(pm, /* flags= */ 0) != null) {
-                return preferredIntent;
-            }
-        }
-        return defaultIntent;
     }
 
     @Override

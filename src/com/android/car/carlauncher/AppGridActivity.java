@@ -18,6 +18,7 @@ package com.android.car.carlauncher;
 
 import static com.android.car.carlauncher.AppLauncherUtils.APP_TYPE_LAUNCHABLES;
 import static com.android.car.carlauncher.AppLauncherUtils.APP_TYPE_MEDIA_SERVICES;
+import static com.android.car.carlauncher.displayarea.CarDisplayAreaOrganizer.FOREGROUND_DISPLAY_AREA_ROOT;
 
 import android.app.Activity;
 import android.app.usage.UsageStats;
@@ -47,13 +48,14 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.car.carlauncher.AppLauncherUtils.LauncherAppsInfo;
+import com.android.car.carlauncher.displayarea.CarDisplayAreaController;
 import com.android.car.ui.FocusArea;
 import com.android.car.ui.baselayout.Insets;
 import com.android.car.ui.baselayout.InsetsChangedListener;
 import com.android.car.ui.core.CarUi;
+import com.android.car.ui.recyclerview.CarUiRecyclerView;
 import com.android.car.ui.toolbar.MenuItem;
 import com.android.car.ui.toolbar.Toolbar;
 import com.android.car.ui.toolbar.ToolbarController;
@@ -86,6 +88,19 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
     private CarPackageManager mCarPackageManager;
     private CarMediaManager mCarMediaManager;
     private Mode mMode;
+    // Track if grid view activity is visible in the foreground DA when custom policy is defined.
+    private boolean mIsGridViewVisibleInForegroundDisplayArea;
+    private CarDisplayAreaController mCarDisplayAreaController;
+
+    /**
+     * enum to define the state of display area possible.
+     * CONTROL_BAR state is when only control bar is visible.
+     * FULL state is when display area hosting default apps  cover the screen fully.
+     * DEFAULT state where maps are shown above DA for default apps.
+     */
+    public enum CAR_LAUNCHER_STATE {
+        CONTROL_BAR, DEFAULT, FULL
+    }
 
     private enum Mode {
         ALL_APPS(R.string.app_launcher_title_all_apps,
@@ -143,6 +158,7 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         mColumnNumber = getResources().getInteger(R.integer.car_app_selector_column_number);
         mPackageManager = getPackageManager();
         mUsageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
@@ -156,8 +172,15 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
         updateMode();
 
         ToolbarController toolbar = CarUi.requireToolbar(this);
-        toolbar.setNavButtonMode(Toolbar.NavButtonMode.CLOSE);
-        toolbar.setState(Toolbar.State.SUBPAGE);
+
+        // Check if a custom policy builder is defined.
+        if (CarLauncherUtils.isCustomDisplayPolicyDefined(this)) {
+            mCarDisplayAreaController = CarDisplayAreaController.getInstance();
+            mCarDisplayAreaController.showTitleBar(FOREGROUND_DISPLAY_AREA_ROOT, this);
+        } else {
+            toolbar.setNavButtonMode(Toolbar.NavButtonMode.CLOSE);
+            toolbar.setState(Toolbar.State.SUBPAGE);
+        }
 
         if (Build.IS_DEBUGGABLE) {
             toolbar.setMenuItems(Collections.singletonList(MenuItem.builder(this)
@@ -174,7 +197,7 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
         }
 
         mGridAdapter = new AppGridAdapter(this);
-        RecyclerView gridView = requireViewById(R.id.apps_grid);
+        CarUiRecyclerView gridView = requireViewById(R.id.apps_grid);
 
         GridLayoutManager gridLayoutManager = new GridLayoutManager(this, mColumnNumber);
         gridLayoutManager.setSpanSizeLookup(new SpanSizeLookup() {
@@ -226,9 +249,36 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
     @Override
     protected void onResume() {
         super.onResume();
+
         // Using onResume() to refresh most recently used apps because we want to refresh even if
         // the app being launched crashes/doesn't cover the entire screen.
         updateAppsLists();
+
+        if (mCarDisplayAreaController == null) {
+            Log.w(TAG, "custom policy not defined");
+            return;
+        }
+
+        // Animate the DA that contains default grid view. These animations should be triggered
+        // from within onResume(). This is because when the AppGridActivity is in foreground and
+        // the user clicks on the grid button at that time only onResume() is called and not
+        // onStop(). We need to close the DA in that case.
+        if (mCarDisplayAreaController.isHostingDefaultApplicationDisplayAreaVisible()) {
+            if (mIsGridViewVisibleInForegroundDisplayArea) {
+                mCarDisplayAreaController.startAnimation(CAR_LAUNCHER_STATE.CONTROL_BAR);
+            }
+        } else {
+            mCarDisplayAreaController.startAnimation(CAR_LAUNCHER_STATE.DEFAULT);
+        }
+
+        // This flag needs to be set in onResume() although it gets reset in onStop(). This is
+        // because when the TDA is visible and some other activity is in foreground and then
+        // AppGrid icon on the nav bar is clicked. In that case onResume() is called after
+        // onStart() and we control all the animations in onResume. So we need to reset the flag
+        // after the animations are triggered. Also, when the AppGrid is in foreground and
+        // AppGrid icon is clicked then ONLY onResume is called.
+        mIsGridViewVisibleInForegroundDisplayArea = true;
+        mCarDisplayAreaController.updateIsGridViewVisibleInForegroundDisplayArea(true);
     }
 
     /** Updates the list of all apps, and the list of the most recently used ones. */
@@ -265,7 +315,9 @@ public class AppGridActivity extends Activity implements InsetsChangedListener {
 
     @Override
     protected void onStop() {
-        super.onPause();
+        super.onStop();
+        mIsGridViewVisibleInForegroundDisplayArea = false;
+        mCarDisplayAreaController.updateIsGridViewVisibleInForegroundDisplayArea(false);
         // disconnect from app install/uninstall receiver
         if (mInstallUninstallReceiver != null) {
             unregisterReceiver(mInstallUninstallReceiver);
