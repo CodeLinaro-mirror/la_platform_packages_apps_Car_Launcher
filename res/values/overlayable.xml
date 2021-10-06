@@ -16,6 +16,7 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
 <resources>
   <overlayable name="CarLauncher">
     <policy type="system|product|signature">
+      <item type="array" name="config_foregroundDAComponents"/>
       <item type="array" name="config_homeCardModuleClasses"/>
       <item type="array" name="config_homeCardPreferredMapActivities"/>
       <item type="array" name="hidden_apps"/>
@@ -25,6 +26,7 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
       <item type="color" name="dialer_button_icon_color"/>
       <item type="color" name="dialer_end_call_button_color"/>
       <item type="color" name="icon_tint"/>
+      <item type="color" name="media_button_tint"/>
       <item type="color" name="minimized_progress_bar_background"/>
       <item type="color" name="recent_apps_line_divider_color"/>
       <item type="color" name="tap_for_more_text_color"/>
@@ -52,6 +54,7 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
       <item type="dimen" name="card_width"/>
       <item type="dimen" name="contextual_screen_percentage"/>
       <item type="dimen" name="control_bar_height"/>
+      <item type="dimen" name="control_bar_padding"/>
       <item type="dimen" name="default_app_display_area_height"/>
       <item type="dimen" name="descriptive_text_margin_top"/>
       <item type="dimen" name="descriptive_text_only_top_margin"/>
@@ -82,6 +85,7 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
       <item type="dimen" name="total_screen_width"/>
       <item type="dimen" name="vertical_border_size"/>
       <item type="drawable" name="car_button_background"/>
+      <item type="drawable" name="default_audio_background"/>
       <item type="drawable" name="ic_apps_black"/>
       <item type="drawable" name="ic_arrow_back_black"/>
       <item type="drawable" name="ic_call_end"/>
@@ -89,6 +93,8 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
       <item type="drawable" name="ic_clear_black"/>
       <item type="drawable" name="ic_dialpad"/>
       <item type="drawable" name="ic_mic_off"/>
+      <item type="drawable" name="ic_mic_on"/>
+      <item type="drawable" name="ic_mute_activatable"/>
       <item type="drawable" name="ic_search_black"/>
       <item type="id" name="app_icon"/>
       <item type="id" name="app_item"/>
@@ -107,7 +113,6 @@ REGENERATE USING packages/apps/Car/tests/tools/rro/generate-overlayable.py
       <item type="id" name="card_icon"/>
       <item type="id" name="card_name"/>
       <item type="id" name="card_view"/>
-      <item type="id" name="close_foreground_display"/>
       <item type="id" name="descriptive_text_layout"/>
       <item type="id" name="descriptive_text_with_controls_layout"/>
       <item type="id" name="divider"/>

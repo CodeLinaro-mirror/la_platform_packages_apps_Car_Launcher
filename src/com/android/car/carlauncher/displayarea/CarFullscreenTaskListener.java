@@ -24,8 +24,10 @@ import android.content.Context;
 import android.view.SurfaceControl;
 
 import com.android.car.carlauncher.AppGridActivity;
-import com.android.wm.shell.FullscreenTaskListener;
 import com.android.wm.shell.common.SyncTransactionQueue;
+import com.android.wm.shell.fullscreen.FullscreenTaskListener;
+
+import java.util.Optional;
 
 /**
  * Organizes tasks presented in display area using {@link CarDisplayAreaOrganizer}.
@@ -39,7 +41,7 @@ public class CarFullscreenTaskListener extends FullscreenTaskListener {
 
     public CarFullscreenTaskListener(Context context, SyncTransactionQueue syncQueue,
             CarDisplayAreaController carDisplayAreaController) {
-        super(syncQueue);
+        super(syncQueue, Optional.empty());
         mContext = context;
         mCarDisplayAreaController = carDisplayAreaController;
     }
@@ -62,17 +64,6 @@ public class CarFullscreenTaskListener extends FullscreenTaskListener {
                 options.setLaunchTaskDisplayArea(
                         mCarDisplayAreaController.getOrganizer().getBackgroundDisplayToken());
                 mContext.startActivity(taskInfo.baseIntent, options.toBundle());
-            }
-        }
-    }
-
-    @Override
-    public void onTaskInfoChanged(ActivityManager.RunningTaskInfo taskInfo) {
-        super.onTaskInfoChanged(taskInfo);
-        if (taskInfo.displayAreaFeatureId == FEATURE_DEFAULT_TASK_CONTAINER) {
-            if (!mCarDisplayAreaController.isHostingDefaultApplicationDisplayAreaVisible()) {
-                mCarDisplayAreaController.startAnimation(
-                        AppGridActivity.CAR_LAUNCHER_STATE.DEFAULT);
             }
         }
     }
