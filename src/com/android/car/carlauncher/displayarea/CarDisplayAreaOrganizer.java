@@ -28,6 +28,7 @@ import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
+import android.os.Handler;
 import android.util.ArrayMap;
 import android.util.DisplayMetrics;
 import android.view.Display;
@@ -82,6 +83,7 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
     private boolean mIsShowingBackgroundDisplay;
     private boolean mIsShowingControlBarDisplay;
     private final CarLauncherDisplayAreaAnimationController mAnimationController;
+    private final Handler mHandlerForAnimation;
     private final Rect mLastVisualDisplayBounds = new Rect();
     private final ArrayMap<WindowContainerToken, SurfaceControl> mDisplayAreaTokenMap =
             new ArrayMap();
@@ -96,8 +98,10 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
     private DisplayAreaAppearedInfo mTitleBarDisplay;
     private DisplayAreaAppearedInfo mControlBarDisplay;
     private boolean mIsRegistered = false;
+    private boolean mIsDisplayAreaAnimating = false;
 
     private AppGridActivity.CAR_LAUNCHER_STATE mToState;
+    DisplayAreaAnimationRunnable mDisplayAreaAnimationRunnable = null;
 
     @VisibleForTesting
     CarLauncherDisplayAreaAnimationCallback mDisplayAreaAnimationCallback =
@@ -106,6 +110,8 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
                 public void onAnimationStart(
                         CarLauncherDisplayAreaAnimationController
                                 .CarLauncherDisplayAreaTransitionAnimator animator) {
+
+                    mIsDisplayAreaAnimating = true;
                     SurfaceControl.Transaction tx = new SurfaceControl.Transaction();
                     // Update the foreground panel layer index to animate on top of the
                     // background DA.
@@ -118,6 +124,7 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
                 public void onAnimationEnd(SurfaceControl.Transaction tx,
                         CarLauncherDisplayAreaAnimationController
                                 .CarLauncherDisplayAreaTransitionAnimator animator) {
+                    mIsDisplayAreaAnimating = false;
                     mAnimationController.removeAnimator(animator.getToken());
                     if (mAnimationController.isAnimatorsConsumed()) {
                         WindowContainerTransaction wct = new WindowContainerTransaction();
@@ -133,6 +140,7 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
                 public void onAnimationCancel(
                         CarLauncherDisplayAreaAnimationController
                                 .CarLauncherDisplayAreaTransitionAnimator animator) {
+                    mIsDisplayAreaAnimating = false;
                     mAnimationController.removeAnimator(animator.getToken());
                 }
             };
@@ -160,6 +168,7 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
         mTransactionQueue = tx;
 
         mAnimationController = new CarLauncherDisplayAreaAnimationController(mContext);
+        mHandlerForAnimation = mContext.getMainThreadHandler();
     }
 
     int getDpiDensity() {
@@ -173,6 +182,10 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
         mDpiDensity = displayResources.getConfiguration().densityDpi;
 
         return mDpiDensity;
+    }
+
+    boolean isDisplayAreaAnimating() {
+        return mIsDisplayAreaAnimating;
     }
 
     private void updateBackgroundDisplayBounds(WindowContainerTransaction wct) {
@@ -256,10 +269,52 @@ public class CarDisplayAreaOrganizer extends DisplayAreaOrganizer {
                 mAnimationController.getAnimator(token, leash, fromPos, toPos,
                         mLastVisualDisplayBounds);
 
+
         if (animator != null) {
-            animator.addDisplayAreaAnimationCallback(mDisplayAreaAnimationCallback)
-                    .setDuration(durationMs)
+            if (mDisplayAreaAnimationRunnable != null) {
+                mDisplayAreaAnimationRunnable.stopAnimation();
+                mHandlerForAnimation.removeCallbacks(mDisplayAreaAnimationRunnable);
+            }
+            mDisplayAreaAnimationRunnable = new DisplayAreaAnimationRunnable(animator, durationMs);
+            mHandlerForAnimation.post(mDisplayAreaAnimationRunnable);
+        }
+    }
+
+    /**
+     * A custom runnable with a flag to stop running the code within the {@link #run()} method when
+     * the runnable is in the message queue. In such cases calling
+     * {@link #removeCallbacksAndMessages(null)} won't work it only stops pending messages
+     * (Runnables) not currently running runnable.
+     */
+    private class DisplayAreaAnimationRunnable implements Runnable {
+        private boolean mStopAnimation = false;
+        private final CarLauncherDisplayAreaAnimationController
+                .CarLauncherDisplayAreaTransitionAnimator mAnimator;
+        private final int mDurationMs;
+
+        DisplayAreaAnimationRunnable(
+                CarLauncherDisplayAreaAnimationController
+                        .CarLauncherDisplayAreaTransitionAnimator animator,
+                int durationMs) {
+            mAnimator = animator;
+            mDurationMs = durationMs;
+        }
+
+        @Override
+        public void run() {
+            if (mStopAnimation) {
+                return;
+            }
+
+            mAnimator.addDisplayAreaAnimationCallback(mDisplayAreaAnimationCallback)
+                    .setDuration(mDurationMs)
                     .start();
+        }
+
+        public void stopAnimation() {
+            // we don't call animator.cancel() here because if there is only one animation call
+            // such as just to open the DA then it will get canceled here.
+            mStopAnimation = true;
         }
     }
 
