@@ -28,7 +28,6 @@ import android.app.TaskInfo;
 import android.app.TaskStackListener;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
-import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
 import android.util.Log;
@@ -47,6 +46,7 @@ import com.android.car.carlauncher.displayarea.CarDisplayAreaOrganizer;
 import com.android.car.carlauncher.displayarea.CarFullscreenTaskListener;
 import com.android.car.carlauncher.homescreen.HomeCardModule;
 import com.android.car.internal.common.UserHelperLite;
+import com.android.launcher3.icons.IconProvider;
 import com.android.wm.shell.ShellTaskOrganizer;
 import com.android.wm.shell.TaskView;
 import com.android.wm.shell.common.HandlerExecutor;
@@ -146,6 +146,7 @@ public class CarLauncher extends FragmentActivity {
             StartingWindowController startingController =
                     new StartingWindowController(this, application.getShellExecutor(),
                             new PhoneStartingWindowTypeAlgorithm(),
+                            new IconProvider(this),
                             application.getTransactionPool());
             taskOrganizer.initStartingWindow(startingController);
             List<TaskAppearedInfo> taskAppearedInfos = taskOrganizer.registerOrganizer();
@@ -159,7 +160,6 @@ public class CarLauncher extends FragmentActivity {
             CarDisplayAreaOrganizer org = carDisplayAreaController.getOrganizer();
             org.startControlBarInDisplayArea();
             org.startMapsInBackGroundDisplayArea();
-            startActivity(new Intent(this, AppGridActivity.class));
             return;
         }
 
