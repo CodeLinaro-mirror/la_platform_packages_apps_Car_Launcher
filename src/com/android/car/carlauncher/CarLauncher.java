@@ -145,8 +145,7 @@ public class CarLauncher extends FragmentActivity {
             taskOrganizer.addListenerForType(fullscreenTaskListener, TASK_LISTENER_TYPE_FULLSCREEN);
             StartingWindowController startingController =
                     new StartingWindowController(this, application.getShellExecutor(),
-                            new PhoneStartingWindowTypeAlgorithm(),
-                            new IconProvider(this),
+                            new PhoneStartingWindowTypeAlgorithm(), new IconProvider(this),
                             application.getTransactionPool());
             taskOrganizer.initStartingWindow(startingController);
             List<TaskAppearedInfo> taskAppearedInfos = taskOrganizer.registerOrganizer();
