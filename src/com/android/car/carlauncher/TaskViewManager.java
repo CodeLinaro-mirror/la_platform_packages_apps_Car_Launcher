@@ -66,8 +66,7 @@ public final class TaskViewManager {
         taskOrganizer.addListenerForType(fullscreenTaskListener, TASK_LISTENER_TYPE_FULLSCREEN);
         StartingWindowController startingController =
                 new StartingWindowController(mContext, mExecutor,
-                        new PhoneStartingWindowTypeAlgorithm(),
-                        new IconProvider(mContext),
+                        new PhoneStartingWindowTypeAlgorithm(), new IconProvider(mContext),
                         transactionPool);
         taskOrganizer.initStartingWindow(startingController);
         List<TaskAppearedInfo> taskAppearedInfos = taskOrganizer.registerOrganizer();
