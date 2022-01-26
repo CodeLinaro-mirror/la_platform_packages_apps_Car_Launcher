@@ -28,14 +28,15 @@ import android.content.Context;
 import android.util.Slog;
 import android.window.TaskAppearedInfo;
 
+import com.android.launcher3.icons.IconProvider;
 import com.android.wm.shell.ShellTaskOrganizer;
 import com.android.wm.shell.TaskView;
 import com.android.wm.shell.TaskViewFactory;
 import com.android.wm.shell.TaskViewFactoryController;
-import com.android.wm.shell.fullscreen.FullscreenTaskListener;
 import com.android.wm.shell.common.HandlerExecutor;
 import com.android.wm.shell.common.SyncTransactionQueue;
 import com.android.wm.shell.common.TransactionPool;
+import com.android.wm.shell.fullscreen.FullscreenTaskListener;
 import com.android.wm.shell.startingsurface.StartingWindowController;
 import com.android.wm.shell.startingsurface.phone.PhoneStartingWindowTypeAlgorithm;
 
@@ -49,29 +50,42 @@ public final class TaskViewManager {
     private final Context mContext;
     private final HandlerExecutor mExecutor;
     private final TaskViewFactory mTaskViewFactory;
+    /**
+     * Having a TaskOrganizer, it's critical to keep the application (CarLauncher) stays running
+     * even when there is memory pressure. we're binding CarLauncherService with CarService to
+     * bump up OOM adj score, for the detail, please refer to CarLauncherService.
+     */
+    private final ShellTaskOrganizer mTaskOrganizer;
 
     public TaskViewManager(@UiContext Context context, HandlerExecutor handlerExecutor) {
         mContext = context;
         mExecutor = handlerExecutor;
+        mTaskOrganizer = new ShellTaskOrganizer(mExecutor, mContext);
         mTaskViewFactory = initWmShell();
+        if (DBG) Slog.d(TAG, "TaskViewManager.create");
     }
 
     private TaskViewFactory initWmShell() {
-        ShellTaskOrganizer taskOrganizer = new ShellTaskOrganizer(mExecutor, mContext);
         TransactionPool transactionPool = new TransactionPool();
         SyncTransactionQueue syncQueue = new SyncTransactionQueue(transactionPool, mExecutor);
         FullscreenTaskListener fullscreenTaskListener = new FullscreenTaskListener(syncQueue,
                 Optional.empty());
-        taskOrganizer.addListenerForType(fullscreenTaskListener, TASK_LISTENER_TYPE_FULLSCREEN);
+        mTaskOrganizer.addListenerForType(fullscreenTaskListener, TASK_LISTENER_TYPE_FULLSCREEN);
         StartingWindowController startingController =
                 new StartingWindowController(mContext, mExecutor,
-                        new PhoneStartingWindowTypeAlgorithm(), transactionPool);
-        taskOrganizer.initStartingWindow(startingController);
-        List<TaskAppearedInfo> taskAppearedInfos = taskOrganizer.registerOrganizer();
+                        new PhoneStartingWindowTypeAlgorithm(), new IconProvider(mContext),
+                        transactionPool);
+        mTaskOrganizer.initStartingWindow(startingController);
+        List<TaskAppearedInfo> taskAppearedInfos = mTaskOrganizer.registerOrganizer();
         cleanUpExistingTaskViewTasks(taskAppearedInfos);
 
-        return new TaskViewFactoryController(taskOrganizer, mExecutor, syncQueue)
+        return new TaskViewFactoryController(mTaskOrganizer, mExecutor, syncQueue)
                 .asTaskViewFactory();
+    }
+
+    void release() {
+        if (DBG) Slog.d(TAG, "TaskViewManager.release");
+        mTaskOrganizer.unregisterOrganizer();
     }
 
     void createTaskView(Consumer<TaskView> onCreate) {
