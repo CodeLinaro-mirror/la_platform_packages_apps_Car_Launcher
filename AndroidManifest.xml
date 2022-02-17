@@ -58,6 +58,8 @@
     <uses-permission android:name="android.permission.ACCESS_VOICE_INTERACTION_SERVICE" />
     <!-- Permission to use InteractionJankMonitor. -->
     <uses-permission android:name="android.permission.READ_DEVICE_CONFIG" />
+    <!-- Permission to send notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- To connect to media browser services in other apps, media browser clients
     that target Android 11 need to add the following in their manifest -->
@@ -121,12 +123,6 @@
             <intent-filter>
                 <action android:name="android.telecom.InCallService"/>
             </intent-filter>
-        </service>
-        <!-- Empty Service to bind with CarService to bump up OOM adj score.
-        For the detail, please refer to CarLauncherService. -->
-        <service android:name=".CarLauncherService"
-            android:exported="true"
-            android:enabled="true">
         </service>
     </application>
 </manifest>
