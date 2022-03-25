@@ -55,6 +55,7 @@ import com.android.car.carlauncher.displayarea.CarFullscreenTaskListener;
 import com.android.car.carlauncher.homescreen.HomeCardModule;
 import com.android.car.carlauncher.taskstack.TaskStackChangeListeners;
 import com.android.car.internal.common.UserHelperLite;
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.launcher3.icons.IconProvider;
 import com.android.wm.shell.ShellTaskOrganizer;
 import com.android.wm.shell.TaskView;
@@ -189,8 +190,15 @@ public class CarLauncher extends FragmentActivity {
 
         // When user-switching, onDestroy in the previous user's CarLauncher isn't called.
         // So tries to release the resource explicitly.
-        release();
+        if (getUserId() == event.getPreviousUserId()) {
+            release();
+        }
     };
+
+    @VisibleForTesting
+    void setCarUserManager(CarUserManager carUserManager) {
+        mCarUserManager = carUserManager;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -242,7 +250,7 @@ public class CarLauncher extends FragmentActivity {
                         mCarActivityManagerRef.set(null);
                         return;
                     }
-                    mCarUserManager = (CarUserManager) car.getCarManager(Car.CAR_USER_SERVICE);
+                    setCarUserManager((CarUserManager) car.getCarManager(Car.CAR_USER_SERVICE));
                     // Only listen to user switching events.
                     UserLifecycleEventFilter filter = new UserLifecycleEventFilter.Builder()
                             .addEventType(USER_LIFECYCLE_EVENT_TYPE_SWITCHING).build();
