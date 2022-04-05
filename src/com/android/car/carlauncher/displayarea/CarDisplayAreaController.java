@@ -46,6 +46,7 @@ import android.os.RemoteException;
 import android.os.UserHandle;
 import android.util.ArraySet;
 import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.IWindowManager;
 import android.view.LayoutInflater;
@@ -56,6 +57,7 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.WindowManagerGlobal;
 import android.window.DisplayAreaAppearedInfo;
+import android.window.DisplayAreaInfo;
 import android.window.WindowContainerToken;
 import android.window.WindowContainerTransaction;
 
@@ -87,10 +89,11 @@ public class CarDisplayAreaController {
 
     // Layer index of how display areas should be placed. Keeping a gap of 100 if we want to
     // add some other display area layers in between in future.
-    static final int BACKGROUND_LAYER_INDEX = 200;
-    static final int FOREGROUND_LAYER_INDEX = 100;
+    static final int FOREGROUND_LAYER_INDEX = 0;
+    static final int BACKGROUND_LAYER_INDEX = 100;
+    static final int CONTROL_BAR_LAYER_INDEX = 200;
     static final int VOICE_PLATE_LAYER_SHOWN_INDEX = 500;
-    static final int CONTROL_BAR_LAYER_INDEX = 0;
+
     static final CarDisplayAreaController INSTANCE = new CarDisplayAreaController();
     private static final int TITLE_BAR_WINDOW_TYPE =
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
@@ -256,6 +259,7 @@ public class CarDisplayAreaController {
      * Show the title bar within a targeted display area using the rootDisplayAreaId.
      */
     public void showTitleBar(int rootDisplayAreaId, Context context) {
+        removeTitleBar();
         LayoutInflater inflater = LayoutInflater.from(context);
         mTitleBarView = inflater
                 .inflate(R.layout.title_bar_display_area_view, null, true);
@@ -286,6 +290,15 @@ public class CarDisplayAreaController {
         }
 
         return mTitleBarWindowManager;
+    }
+
+    /**
+     * Remove the title bar view
+     */
+    public void removeTitleBar() {
+        if (mTitleBarView != null) {
+            mTitleBarWindowManager.removeView(mTitleBarView);
+        }
     }
 
     /**
@@ -459,6 +472,9 @@ public class CarDisplayAreaController {
 
     void showVoicePlateDisplayArea() {
         SurfaceControl.Transaction tx = new SurfaceControl.Transaction();
+        // Reset the layer for voice plate. This is needed as when the tasks are launched on
+        // other DA's those are brought to the top.
+        tx.setLayer(mVoicePlateDisplay.getLeash(), VOICE_PLATE_LAYER_SHOWN_INDEX);
         tx.show(mVoicePlateDisplay.getLeash());
         tx.apply(true);
     }
@@ -505,7 +521,10 @@ public class CarDisplayAreaController {
         List<DisplayAreaAppearedInfo> imeDisplayAreaInfos =
                 mOrganizer.registerOrganizer(FEATURE_IME_PLACEHOLDER);
         for (DisplayAreaAppearedInfo info : imeDisplayAreaInfos) {
-            if (info.getDisplayAreaInfo().rootDisplayAreaId == FEATURE_ROOT) {
+            DisplayAreaInfo daInfo = info.getDisplayAreaInfo();
+            // Need to check the display for the multi displays platform.
+            if (daInfo.rootDisplayAreaId == FEATURE_ROOT
+                    && daInfo.displayId == Display.DEFAULT_DISPLAY) {
                 mImeContainerDisplayArea = info;
             }
         }
