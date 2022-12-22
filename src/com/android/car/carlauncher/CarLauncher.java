@@ -38,7 +38,6 @@ import com.android.car.carlauncher.homescreen.HomeCardModule;
 import com.android.car.carlauncher.taskstack.TaskStackChangeListeners;
 import com.android.car.internal.common.UserHelperLite;
 import com.android.wm.shell.TaskView;
-import com.android.wm.shell.common.HandlerExecutor;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -156,12 +155,13 @@ public class CarLauncher extends FragmentActivity {
     private void setUpTaskView(ViewGroup parent) {
         Set<String> taskViewPackages = new ArraySet<>(getResources().getStringArray(
                 R.array.config_taskViewPackages));
-        mTaskViewManager = new TaskViewManager(this,
-                new HandlerExecutor(getMainThreadHandler()));
+        mTaskViewManager = new TaskViewManager(this, getMainThreadHandler());
 
         Intent mapIntent = mUseSmallCanvasOptimizedMap
                 ? CarLauncherUtils.getSmallCanvasOptimizedMapIntent(this)
                 : CarLauncherUtils.getMapsIntent(this);
+        // Don't want to show this Activity in Recents.
+        mapIntent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
         mTaskViewManager.createControlledCarTaskView(
                 getMainExecutor(),
                 mapIntent,
