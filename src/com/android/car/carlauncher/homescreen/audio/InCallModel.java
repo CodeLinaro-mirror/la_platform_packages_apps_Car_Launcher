@@ -95,6 +95,9 @@ public class InCallModel implements HomeCardInterface.Model, InCallServiceImpl.I
             if (DEBUG) Log.d(TAG, "onServiceConnected: " + name + ", service: " + service);
             mInCallService = ((InCallServiceImpl.LocalBinder) service).getService();
             mInCallService.addListener(InCallModel.this);
+            if (mInCallService.getCalls() != null && !mInCallService.getCalls().isEmpty()) {
+                handleActiveCall(mInCallService.getCalls().get(0));
+            }
         }
 
         @Override
@@ -142,6 +145,7 @@ public class InCallModel implements HomeCardInterface.Model, InCallServiceImpl.I
     @Override
     public void onDestroy(Context context) {
         if (mInCallService != null) {
+            mInCallService.removeListener(InCallModel.this);
             context.getApplicationContext().unbindService(mInCallServiceConnection);
             mInCallService = null;
         }
@@ -375,8 +379,12 @@ public class InCallModel implements HomeCardInterface.Model, InCallServiceImpl.I
                 return new DescriptiveTextWithControlsView(image, title, mDialingCallSubtitle,
                         mMuteButton, mEndCallButton, mDialpadButton);
             case Call.STATE_ACTIVE:
+                long callStartTime =
+                        mCurrentCall != null ? mCurrentCall.getDetails().getConnectTimeMillis()
+                                - System.currentTimeMillis() + mElapsedTimeClock.millis()
+                                : mElapsedTimeClock.millis();
                 return new DescriptiveTextWithControlsView(image, title, mOngoingCallSubtitle,
-                        mElapsedTimeClock.millis(), mMuteButton, mEndCallButton, mDialpadButton);
+                        callStartTime, mMuteButton, mEndCallButton, mDialpadButton);
             default:
                 if (DEBUG) {
                     Log.d(TAG, "Call State " + callState
