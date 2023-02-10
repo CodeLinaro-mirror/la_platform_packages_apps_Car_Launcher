@@ -53,6 +53,7 @@ import android.car.test.mocks.AbstractExtendedMockitoTestCase;
 import android.car.user.CarUserManager;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Looper;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.window.TaskAppearedInfo;
@@ -79,6 +80,7 @@ import com.android.wm.shell.transition.Transitions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -122,6 +124,8 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
     private ShellController mShellController;
     @Mock
     private StartingWindowController mStartingWindowController;
+    @Mock
+    private TaskViewInputInterceptor mTaskViewInputInterceptor;
 
     @Captor
     private ArgumentCaptor<TaskStackListener> mTaskStackListenerArgumentCaptor;
@@ -185,6 +189,11 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
         scenario.onActivity(activity -> mActivity = activity);
     }
 
+    @After
+    public void tearDown() throws InterruptedException {
+        mActivity.finishCompletely();
+    }
+
     private TaskAppearedInfo createMultiWindowTask(int taskId) {
         ActivityManager.RunningTaskInfo taskInfo =
                 new ActivityManager.RunningTaskInfo();
@@ -223,13 +232,42 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
 
         taskViewManager.createControlledCarTaskView(
                 mActivity.getMainExecutor(),
-                activityIntent,
-                /* autoRestartOnCrash= */ false,
+                ControlledCarTaskViewConfig.builder()
+                        .setActivityIntent(activityIntent)
+                        .setAutoRestartOnCrash(false)
+                        .build(),
                 controlledCarTaskViewCallbacks
         );
 
         runOnMainAndWait(() -> {});
         verify(controlledCarTaskViewCallbacks).onTaskViewCreated(any());
+        verifyZeroInteractions(mTaskViewInputInterceptor);
+    }
+
+    @Test
+    public void testCreateControlledTaskView_initializesInterceptor_whenCapturingEvents() throws
+            Exception {
+        TaskViewManager taskViewManager = createTaskViewManager();
+
+        Intent activityIntent = new Intent();
+        Set<String> packagesThatCanRestart = ImmutableSet.of("com.random.package");
+        ControlledCarTaskViewCallbacks controlledCarTaskViewCallbacks = mock(
+                ControlledCarTaskViewCallbacks.class);
+        when(controlledCarTaskViewCallbacks.getDependingPackageNames())
+                .thenReturn(packagesThatCanRestart);
+
+        taskViewManager.createControlledCarTaskView(
+                mActivity.getMainExecutor(),
+                ControlledCarTaskViewConfig.builder()
+                        .setActivityIntent(activityIntent)
+                        .setAutoRestartOnCrash(false)
+                        .setCaptureLongPress(true)
+                        .build(),
+                controlledCarTaskViewCallbacks
+        );
+
+        runOnMainAndWait(() -> {});
+        verify(mTaskViewInputInterceptor).init();
     }
 
     @Test
@@ -243,8 +281,10 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
                 .thenReturn(packagesThatCanRestart);
         taskViewManager.createControlledCarTaskView(
                 mActivity.getMainExecutor(),
-                activityIntent,
-                /* autoRestartOnCrash= */ false,
+                ControlledCarTaskViewConfig.builder()
+                        .setActivityIntent(activityIntent)
+                        .setAutoRestartOnCrash(false)
+                        .build(),
                 controlledCarTaskViewCallbacks
         );
         ControlledCarTaskView taskView = spy(taskViewManager.getControlledTaskViews().get(0));
@@ -535,8 +575,10 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
                 .thenReturn(packagesThatCanRestart);
         taskViewManager.createControlledCarTaskView(
                 mActivity.getMainExecutor(),
-                activityIntent,
-                false,
+                ControlledCarTaskViewConfig.builder()
+                        .setActivityIntent(activityIntent)
+                        .setAutoRestartOnCrash(false)
+                        .build(),
                 controlledCarTaskViewCallbacks
         );
 
@@ -785,11 +827,22 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
         assertThat(taskViewManager.getControlledTaskViews()).isEmpty();
 
         verify(mOrganizer).unregisterOrganizer();
+        verify(mTaskViewInputInterceptor).release();
     }
 
     private TaskViewManager createTaskViewManager() {
-        return new TaskViewManager(mActivity, mShellExecutor, mOrganizer, mSyncQueue, mTransitions,
-                new ShellInit(mShellExecutor), mShellController, mStartingWindowController);
+        // InstrumentationTestRunner prepares a looper, but AndroidJUnitRunner does not.
+        // http://b/25897652.
+        Looper looper = Looper.myLooper();
+        if (looper == null) {
+            Looper.prepare();
+        }
+
+        TaskViewManager taskViewManager =  new TaskViewManager(mActivity, mShellExecutor,
+                mOrganizer, mSyncQueue, mTransitions, new ShellInit(mShellExecutor),
+                mShellController, mStartingWindowController);
+        taskViewManager.setTaskViewInputInterceptor(mTaskViewInputInterceptor);
+        return taskViewManager;
     }
 
     private void runOnMainAndWait(Runnable r) throws Exception {
@@ -801,5 +854,19 @@ public class TaskViewManagerTest extends AbstractExtendedMockitoTestCase {
         mIdleHandlerLatch.await(5, TimeUnit.SECONDS);
     }
 
-    public static class TestActivity extends Activity {}
+    public static class TestActivity extends Activity {
+        private static final int FINISH_TIMEOUT_MS = 1000;
+        private final CountDownLatch mDestroyed = new CountDownLatch(1);
+
+        @Override
+        protected void onDestroy() {
+            super.onDestroy();
+            mDestroyed.countDown();
+        }
+
+        void finishCompletely() throws InterruptedException {
+            finish();
+            mDestroyed.await(FINISH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        }
+    }
 }
