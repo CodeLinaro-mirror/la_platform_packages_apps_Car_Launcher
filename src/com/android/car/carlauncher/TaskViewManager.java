@@ -90,6 +90,7 @@ public final class TaskViewManager {
     private final Transitions mTransitions;
     private final TaskViewTransitions mTaskViewTransitions;
     private final ShellTaskOrganizer mTaskOrganizer;
+    private TaskViewInputInterceptor mTaskViewInputInterceptor;
     private final int mHostTaskId;
 
     // All TaskView are bound to the Host Activity if it exists.
@@ -325,6 +326,7 @@ public final class TaskViewManager {
         mSyncQueue = syncQueue;
         mTransitions = transitions;
         mTaskViewTransitions = new TaskViewTransitions(mTransitions);
+        mTaskViewInputInterceptor = new TaskViewInputInterceptor(context, this);
 
         initCar();
         shellInit.init();
@@ -401,22 +403,26 @@ public final class TaskViewManager {
      *
      * @param callbackExecutor the executor which the {@link ControlledCarTaskViewCallbacks} will
      *                         be executed on.
-     * @param activityIntent the intent of the activity that is meant to be started in this
-     *                       {@link ControlledCarTaskView}.
+     * @param controlledCarTaskViewConfig the configuration for the underlying
+     * {@link ControlledCarTaskView}.
      * @param taskViewCallbacks the callbacks for the underlying TaskView.
      */
     public void createControlledCarTaskView(
             Executor callbackExecutor,
-            Intent activityIntent,
-            boolean autoRestartOnCrash,
+            ControlledCarTaskViewConfig controlledCarTaskViewConfig,
             ControlledCarTaskViewCallbacks taskViewCallbacks) {
         mShellExecutor.execute(() -> {
             ControlledCarTaskView taskView = new ControlledCarTaskView(mContext, mTaskOrganizer,
-                    mTaskViewTransitions, mSyncQueue,
-                    callbackExecutor, activityIntent, autoRestartOnCrash,
+                    mTaskViewTransitions, mSyncQueue, callbackExecutor, controlledCarTaskViewConfig,
                     taskViewCallbacks, mContext.getSystemService(UserManager.class), this);
             mControlledTaskViews.add(taskView);
+
+            if (controlledCarTaskViewConfig.mCaptureGestures
+                    || controlledCarTaskViewConfig.mCaptureLongPress) {
+                mTaskViewInputInterceptor.init();
+            }
         });
+
     }
 
     /**
@@ -496,6 +502,7 @@ public final class TaskViewManager {
 
             mContext.unregisterActivityLifecycleCallbacks(mActivityLifecycleCallbacks);
             mTaskOrganizer.unregisterOrganizer();
+            mTaskViewInputInterceptor.release();
         });
     }
 
@@ -593,5 +600,11 @@ public final class TaskViewManager {
     @VisibleForTesting
     BroadcastReceiver getPackageBroadcastReceiver() {
         return mPackageBroadcastReceiver;
+    }
+
+    @VisibleForTesting
+    /** Only meant for testing, should not be used by real code. */
+    void setTaskViewInputInterceptor(TaskViewInputInterceptor taskViewInputInterceptor) {
+        mTaskViewInputInterceptor = taskViewInputInterceptor;
     }
 }
