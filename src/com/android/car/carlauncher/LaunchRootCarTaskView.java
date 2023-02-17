@@ -59,7 +59,7 @@ final class LaunchRootCarTaskView extends CarTaskView {
                     // The first call to onTaskAppeared() is always for the root-task.
                     if (mLaunchRootTask == null && !taskInfo.hasParentTask()) {
                         setRootTaskAsLaunchRoot(taskInfo);
-                        LaunchRootCarTaskView.this.onTaskAppeared(taskInfo, leash);
+                        LaunchRootCarTaskView.this.dispatchTaskAppeared(taskInfo, leash);
                         mCallbackExecutor.execute(() -> mCallbacks.onTaskViewReady());
                         return;
                     }
@@ -77,7 +77,7 @@ final class LaunchRootCarTaskView extends CarTaskView {
                 public void onTaskInfoChanged(ActivityManager.RunningTaskInfo taskInfo) {
                     if (mLaunchRootTask != null
                             && mLaunchRootTask.taskId == taskInfo.taskId) {
-                        LaunchRootCarTaskView.this.onTaskInfoChanged(taskInfo);
+                        LaunchRootCarTaskView.this.dispatchTaskInfoChanged(taskInfo);
                         if (DBG) {
                             Log.d(TAG, "got onTaskInfoChanged for the launch root task. Not "
                                     + "forwarding this to root task listener");
@@ -100,7 +100,7 @@ final class LaunchRootCarTaskView extends CarTaskView {
                     }
                     if (mLaunchRootTask != null
                             && mLaunchRootTask.taskId == taskInfo.taskId) {
-                        LaunchRootCarTaskView.this.onTaskVanished(taskInfo);
+                        LaunchRootCarTaskView.this.dispatchTaskVanished(taskInfo);
                         if (DBG) {
                             Log.d(TAG, "got onTaskVanished for the launch root task. Not "
                                     + "forwarding this to root task listener");
@@ -109,6 +109,11 @@ final class LaunchRootCarTaskView extends CarTaskView {
                     }
 
                     mRootTaskListener.onTaskVanished(taskInfo);
+                }
+
+                @Override
+                public void onBackPressedOnTaskRoot(ActivityManager.RunningTaskInfo taskInfo) {
+                    mRootTaskListener.onBackPressedOnTaskRoot(taskInfo);
                 }
             };
 
@@ -133,16 +138,17 @@ final class LaunchRootCarTaskView extends CarTaskView {
     protected void onCarTaskViewInitialized() {
         super.onCarTaskViewInitialized();
         mShellTaskOrganizer.getExecutor().execute(() -> {
-            // Should run on shell's executor
+            // removeWithTaskOrganizer should be true to signal the system that this root task is
+            // inside a TaskView and should not be animated by the core.
             mShellTaskOrganizer.createRootTask(DEFAULT_DISPLAY,
                     WINDOWING_MODE_MULTI_WINDOW,
-                    mRootTaskListenerWrapper);
+                    mRootTaskListenerWrapper, /* removeWithTaskOrganizer= */ true);
         });
     }
 
     @Override
-    protected void notifyReleased() {
-        super.notifyReleased();
+    public void release() {
+        super.release();
         clearLaunchRootTask();
     }
 

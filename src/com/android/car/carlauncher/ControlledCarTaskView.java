@@ -117,6 +117,11 @@ final class ControlledCarTaskView extends CarTaskView {
                 /* fillInIntent= */ null, options, launchBounds);
     }
 
+    /** Gets the config used to build this controlled car task view. */
+    ControlledCarTaskViewConfig getConfig() {
+        return mConfig;
+    }
+
     /**
      * See {@link ControlledCarTaskViewCallbacks#getDependingPackageNames()}.
      */
@@ -138,7 +143,7 @@ final class ControlledCarTaskView extends CarTaskView {
 
     @Override
     void showEmbeddedTask(WindowContainerTransaction wct) {
-        if (mTaskInfo == null) {
+        if (getTaskInfo() == null) {
             if (DBG) {
                 Log.d(TAG, "Embedded task not available, starting it now.");
             }
