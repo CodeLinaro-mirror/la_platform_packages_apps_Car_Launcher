@@ -72,6 +72,14 @@
     <!-- Separator between current time and max time in control bar, optional times [CHAR_LIMIT=5] -->
     <string name="times_separator"> / </string>
 
+    <!-- Intent action meant to invoke user TOS flow.
+         The intent URI has to be formatted according to Intent.URI_INTENT_SCHEME
+         URI, for example should contain the intent action and any extras if necessary:
+         "intent:#Intent;action=com.android.car.SHOW_USER_TOS_ACTIVITY;B.show_value_prop=true;end"
+    -->
+
+    <string name="user_tos_activity_intent">intent:#Intent;action=com.android.car.SHOW_USER_TOS_ACTIVITY;B.show_value_prop=true;end</string>
+
     <!--
         A list of package names to exclude from the app selector when filtering is active.
         DO NOT TRANSLATE.
@@ -82,7 +90,6 @@
         <item>com.google.android.embedded.projection</item>
         <item>com.android.car.bugreport</item>
         <item>com.android.car.trust</item>
-        <item>com.android.car.datacenter</item>
         <item>com.google.android.car.diagnosticrecorder</item>
         <item>com.google.android.car.diskwriteapp</item>
         <item>com.android.documentsui</item>
@@ -114,4 +121,9 @@
     -->
     <string-array name="packages_hidden_from_recents" translatable="false">
     </string-array>
+
+    <!-- TosBanner strings -->
+    <string name="banner_title_text">To use user tos disabled apps, agree to User tos</string>
+    <string name="banner_review_button_text">Review</string>
+    <string name="banner_dismiss_button_text">Not Now</string>
 </resources>

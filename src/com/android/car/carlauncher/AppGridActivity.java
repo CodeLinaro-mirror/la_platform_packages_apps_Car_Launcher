@@ -127,6 +127,7 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
     private AppGridLayoutManager mLayoutManager;
     private boolean mIsCurrentlyDragging;
     private long mOffPageHoverBeforeScrollMs;
+    private Banner mBanner;
 
     private AppGridDragController mAppGridDragController;
     private PaginationController mPaginationController;
@@ -440,6 +441,9 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
         dimensionUpdateCallback.addListener(mPageIndicator);
         dimensionUpdateCallback.addListener(this);
         mPaginationController = new PaginationController(windowBackground, dimensionUpdateCallback);
+
+        mBanner = requireViewById(R.id.tos_banner);
+        updateTosBanner();
     }
 
     @Override
@@ -503,6 +507,8 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
     @Override
     protected void onResume() {
         super.onResume();
+
+        updateTosBannerVisibility();
         updateScrollState();
         mAdapter.setLayoutDirection(getResources().getConfiguration().getLayoutDirection());
     }
@@ -892,6 +898,27 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
                     }
                 });
         delayedDismissAnimator.start();
+    }
+
+    private void updateTosBanner() {
+        mBanner.setFirstButtonText(getString(R.string.banner_review_button_text));
+        mBanner.setSecondButtonText(getString(R.string.banner_dismiss_button_text));
+        mBanner.setTitleText(getString(R.string.banner_title_text));
+        mBanner.setFirstButtonOnClickListener(v -> {
+            Intent tosIntent = AppLauncherUtils.getIntentForTosAcceptanceFlow(v.getContext());
+            AppLauncherUtils.launchApp(v.getContext(), tosIntent);
+        });
+        mBanner.setSecondButtonOnClickListener(
+                v -> mBanner.setVisibility(View.GONE));
+    }
+
+    private void updateTosBannerVisibility() {
+
+        if (AppLauncherUtils.showTosBanner(this)) {
+            getMainThreadHandler().post(() -> mBanner.setVisibility(View.VISIBLE));
+        } else {
+            mBanner.setVisibility(View.GONE);
+        }
     }
 
     @VisibleForTesting

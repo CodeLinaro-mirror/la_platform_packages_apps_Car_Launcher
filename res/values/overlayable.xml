@@ -25,6 +25,8 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="attr" name="cardCornerRadius"/>
       <item type="attr" name="cornerFamily"/>
       <item type="attr" name="cornerSize"/>
+      <item type="attr" name="first_button_text"/>
+      <item type="attr" name="second_button_text"/>
       <item type="attr" name="shapeAppearanceOverlay"/>
       <item type="attr" name="strokeColor"/>
       <item type="attr" name="strokeWidth"/>
@@ -39,6 +41,9 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="color" name="app_item_on_hover_background_color"/>
       <item type="color" name="app_item_on_hover_border_color"/>
       <item type="color" name="app_name_color"/>
+      <item type="color" name="banner_background_color"/>
+      <item type="color" name="banner_button_text_color"/>
+      <item type="color" name="banner_title_text_color"/>
       <item type="color" name="card_background_scrim"/>
       <item type="color" name="clear_all_recents_text_color"/>
       <item type="color" name="date_divider_bar_color"/>
@@ -66,6 +71,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="dimen" name="app_grid_width"/>
       <item type="dimen" name="app_icon_description_margin"/>
       <item type="dimen" name="app_icon_opacity"/>
+      <item type="dimen" name="app_icon_opacity_tos_disabled"/>
       <item type="dimen" name="app_icon_opacity_unavailable"/>
       <item type="dimen" name="app_icon_ripple_radius"/>
       <item type="dimen" name="app_icon_scaled_size"/>
@@ -75,6 +81,9 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="dimen" name="app_name_margin_horizontal"/>
       <item type="dimen" name="app_touch_target_margin"/>
       <item type="dimen" name="app_touch_target_padding"/>
+      <item type="dimen" name="banner_button_maximum_width"/>
+      <item type="dimen" name="banner_content_margin"/>
+      <item type="dimen" name="banner_image_view_size"/>
       <item type="dimen" name="button_outline_thickness"/>
       <item type="dimen" name="button_tap_target_icon_padding"/>
       <item type="dimen" name="button_tap_target_size"/>
@@ -126,6 +135,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="dimen" name="threshold_to_start_drag_drop"/>
       <item type="dimen" name="vertical_border_size"/>
       <item type="drawable" name="app_item_highlight"/>
+      <item type="drawable" name="banner_warning_image"/>
       <item type="drawable" name="car_button_background"/>
       <item type="drawable" name="control_bar_contact_image_background"/>
       <item type="drawable" name="control_bar_image_background"/>
@@ -153,6 +163,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="id" name="app_name"/>
       <item type="id" name="apps_grid"/>
       <item type="id" name="apps_grid_background"/>
+      <item type="id" name="banner_title"/>
       <item type="id" name="bottom_card"/>
       <item type="id" name="bottom_edge"/>
       <item type="id" name="bottom_line"/>
@@ -174,7 +185,9 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="id" name="divider_horizontal"/>
       <item type="id" name="empty_state"/>
       <item type="id" name="end_edge"/>
+      <item type="id" name="first_button"/>
       <item type="id" name="focus_area"/>
+      <item type="id" name="icon"/>
       <item type="id" name="maps_card"/>
       <item type="id" name="media_descriptive_text"/>
       <item type="id" name="media_layout"/>
@@ -193,6 +206,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="id" name="recent_tasks_group"/>
       <item type="id" name="recent_tasks_list"/>
       <item type="id" name="recent_tasks_list_focus_area"/>
+      <item type="id" name="second_button"/>
       <item type="id" name="secondary_text"/>
       <item type="id" name="start_edge"/>
       <item type="id" name="tap_for_more_text"/>
@@ -204,6 +218,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="id" name="top_card"/>
       <item type="id" name="top_edge"/>
       <item type="id" name="top_line"/>
+      <item type="id" name="tos_banner"/>
       <item type="id" name="vertical_barrier"/>
       <item type="integer" name="car_app_selector_column_number"/>
       <item type="integer" name="car_app_selector_row_number"/>
@@ -225,6 +240,7 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="integer" name="playback_controls_bar_columns"/>
       <item type="layout" name="app_grid_activity"/>
       <item type="layout" name="app_item"/>
+      <item type="layout" name="banner"/>
       <item type="layout" name="button_trio"/>
       <item type="layout" name="car_launcher"/>
       <item type="layout" name="car_launcher_multiwindow"/>
@@ -253,12 +269,16 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="string" name="app_launcher_title_all_apps"/>
       <item type="string" name="app_launcher_title_media_only"/>
       <item type="string" name="app_title"/>
+      <item type="string" name="banner_dismiss_button_text"/>
+      <item type="string" name="banner_review_button_text"/>
+      <item type="string" name="banner_title_text"/>
       <item type="string" name="config_msg_mirroring_pkg_name_key"/>
       <item type="string" name="config_msg_mirroring_redirect_uri_key"/>
       <item type="string" name="config_msg_mirroring_service_class_name"/>
       <item type="string" name="config_msg_mirroring_service_pkg_name"/>
       <item type="string" name="config_passengerLauncherComponent"/>
       <item type="string" name="config_smallCanvasOptimizedMapIntent"/>
+      <item type="string" name="config_tosMapIntent"/>
       <item type="string" name="default_media_song_title"/>
       <item type="string" name="dialing_call_text"/>
       <item type="string" name="driving_toast_text"/>
@@ -279,9 +299,11 @@ REGENERATE USING packages/apps/Car/libs/tools/rro/generate-overlayable.py
       <item type="string" name="tap_for_more_info_text"/>
       <item type="string" name="tap_to_launch_text"/>
       <item type="string" name="times_separator"/>
+      <item type="string" name="user_tos_activity_intent"/>
       <item type="string" name="weather_app_name"/>
       <item type="style" name="ActionDialogTheme"/>
       <item type="style" name="AppDisplayNameStyle"/>
+      <item type="style" name="BannerButton"/>
       <item type="style" name="CardViewStyle"/>
       <item type="style" name="ClearAllRecentTasksButton"/>
       <item type="style" name="ClearAllRecentTasksButtonFocusArea"/>
