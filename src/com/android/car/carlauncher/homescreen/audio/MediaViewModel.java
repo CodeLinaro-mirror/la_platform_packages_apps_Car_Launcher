@@ -22,6 +22,7 @@ import static android.car.media.CarMediaManager.MEDIA_SOURCE_MODE_PLAYBACK;
 import android.app.ActivityOptions;
 import android.app.Application;
 import android.car.media.CarMediaIntents;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
@@ -50,6 +51,9 @@ import com.android.car.media.common.source.MediaSource;
 import com.android.car.media.common.source.MediaSourceColors;
 import com.android.car.media.common.source.MediaSourceViewModel;
 import com.android.internal.annotations.VisibleForTesting;
+
+import java.util.Arrays;
+import java.util.List;
 
 
 /**
@@ -132,6 +136,7 @@ public class MediaViewModel extends AndroidViewModel implements HomeCardInterfac
         super(application);
         mSourceViewModel = sourceViewModel;
         mPlaybackViewModel = playbackViewModel;
+
     }
 
     @Override
@@ -170,6 +175,8 @@ public class MediaViewModel extends AndroidViewModel implements HomeCardInterfac
         mUseMediaSourceColor = resources.getBoolean(R.bool.use_media_source_color_for_seek_bar);
         mTimesSeparator = resources.getString(com.android.car.carlauncher.R.string.times_separator);
         mAudioPresenter.onModelUpdated(/* model = */ this);
+
+        updateModel(); // Make sure the name of the media source properly reflects the locale.
     }
 
     @Override
@@ -244,30 +251,38 @@ public class MediaViewModel extends AndroidViewModel implements HomeCardInterfac
     private void updateModel() {
         MediaSource mediaSource = mSourceViewModel.getPrimaryMediaSource().getValue();
         if (mediaSourceChanged()) {
-            // Video apps are not surfaced here, even if they happen to offer MediaBrowse.
-            // Rationale is that very few apps do this and users might be confused why some
-            // apps can be controlled via widget while others can't. For Video apps, the card
-            // will switch to showing "no media playing" case.
             if (mediaSource != null
-                    && !AppLauncherUtils.isVideoApp(mContext.getPackageManager(),
-                    mediaSource.getPackageName())) {
+                    && supportsMediaWidget(mediaSource.getBrowseServiceComponentName())) {
                 if (Log.isLoggable(TAG, Log.INFO)) {
-                    Log.i(TAG, "Setting Media view to source " + mediaSource.getDisplayName());
+                    Log.i(TAG, "Setting Media view to source "
+                            + mediaSource.getDisplayName(mContext));
                 }
-                mAppName = mediaSource.getDisplayName();
+                mAppName = mediaSource.getDisplayName(mContext);
                 mAppIcon = mediaSource.getIcon();
                 mCardHeader = new CardHeader(mAppName, mAppIcon);
                 updateMetadata();
                 updateProgress();
                 updateMediaSourceColor();
+
+                mAudioPresenter.onModelUpdated(/* model = */ this);
             } else {
-                if (Log.isLoggable(TAG, Log.INFO)) {
-                    Log.i(TAG, "Not resetting media widget for video apps or apps "
+                if (Log.isLoggable(TAG, Log.DEBUG)) {
+                    Log.d(TAG, "Not resetting media widget for apps "
                             + "that do not support media browse");
                 }
             }
-            mAudioPresenter.onModelUpdated(/* model = */ this);
         }
+    }
+
+    /**
+     * Ensure the app is supported in media widget. This should either be a media templated
+     * app or a custom media component
+     */
+    private boolean supportsMediaWidget(ComponentName componentName) {
+        List<String> customMediaComponents = Arrays.asList(
+                mContext.getResources().getStringArray(R.array.custom_media_packages));
+        return AppLauncherUtils.isMediaTemplate(getApplication().getPackageManager(), componentName)
+                || customMediaComponents.contains(componentName.flattenToString());
     }
 
     /**
@@ -354,7 +369,7 @@ public class MediaViewModel extends AndroidViewModel implements HomeCardInterfac
             }
             return true;
         }
-        if (mediaSource != null && (mAppName != mediaSource.getDisplayName()
+        if (mediaSource != null && (mAppName != mediaSource.getDisplayName(mContext)
                 || mAppIcon != mediaSource.getIcon())) {
             if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "new media source is " + mediaSource.toString());
