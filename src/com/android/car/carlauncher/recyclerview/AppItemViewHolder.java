@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.car.carlauncher;
+package com.android.car.carlauncher.recyclerview;
 
 import static com.android.car.carlauncher.AppGridConstants.AppItemBoundDirection;
 import static com.android.car.carlauncher.AppGridConstants.PageOrientation;
@@ -45,6 +45,9 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.car.carlauncher.AppGridPageSnapper.AppGridPageSnapCallback;
+import com.android.car.carlauncher.AppItemDragShadowBuilder;
+import com.android.car.carlauncher.AppMetaData;
+import com.android.car.carlauncher.R;
 
 /**
  * App item view holder that contains the app icon and name.
@@ -63,12 +66,12 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
     private final TextView mAppName;
     private final AppItemDragCallback mDragCallback;
     private final AppGridPageSnapCallback mSnapCallback;
-    private final Rect mPageBound;
     private final boolean mConfigReorderAllowed;
     private final int mThresholdToStartDragDrop;
+    private Rect mPageBound;
 
     @PageOrientation
-    private int mAppGridOrientation;
+    private int mPageOrientation;
     @AppItemBoundDirection
     private int mDragExitDirection;
 
@@ -81,8 +84,23 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
     private boolean mIsTargeted;
     private boolean mCanStartDragAction;
 
-    AppItemViewHolder(View view, Context context, AppItemDragCallback dragCallback,
-            AppGridPageSnapCallback snapCallback, Rect pageBound) {
+    /**
+     * Information describing state of the recyclerview when this view holder was last rebinded.
+     *
+     * {@param isDistractionOptimizationRequired} true if driving restriction should be required.
+     * {@param pageBound} the bounds of the recyclerview containing this view holder.
+     */
+    public static class BindInfo {
+        private final boolean mIsDistractionOptimizationRequired;
+        private final Rect mPageBound;
+        public BindInfo(boolean isDistractionOptimizationRequired, Rect pageBound) {
+            this.mIsDistractionOptimizationRequired = isDistractionOptimizationRequired;
+            this.mPageBound = pageBound;
+        }
+    }
+
+    public AppItemViewHolder(View view, Context context, AppItemDragCallback dragCallback,
+            AppGridPageSnapCallback snapCallback) {
         super(view);
         mContext = context;
         mAppItemView = view.findViewById(R.id.app_item);
@@ -90,7 +108,6 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         mAppName = mAppItemView.findViewById(R.id.app_name);
         mDragCallback = dragCallback;
         mSnapCallback = snapCallback;
-        mPageBound = pageBound;
 
         mIconSize = context.getResources().getDimensionPixelSize(R.dimen.app_icon_size);
         mConfigReorderAllowed = context.getResources().getBoolean(R.bool.config_allow_reordering);
@@ -98,7 +115,7 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         // reordering, measured in pixels on screen.
         mThresholdToStartDragDrop = context.getResources().getDimensionPixelSize(
                 R.dimen.threshold_to_start_drag_drop);
-        mAppGridOrientation = context.getResources().getBoolean(R.bool.use_vertical_app_grid)
+        mPageOrientation = context.getResources().getBoolean(R.bool.use_vertical_app_grid)
                 ? PageOrientation.VERTICAL : PageOrientation.HORIZONTAL;
 
         mIconScaledSize = context.getResources().getDimensionPixelSize(
@@ -122,16 +139,19 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
      *
      * @param app AppMetaData to be displayed. Pass {@code null} will empty out the viewHolder.
      */
-    public void bind(@Nullable AppMetaData app, boolean isDistractionOptimizationRequired) {
+    public void bind(@Nullable AppMetaData app, @NonNull BindInfo bindInfo) {
         resetViewHolder();
         if (app == null) {
             return;
         }
+        boolean isDistractionOptimizationRequired = bindInfo.mIsDistractionOptimizationRequired;
+        mPageBound = bindInfo.mPageBound;
 
         mHasAppMetadata = true;
         mAppItemView.setFocusable(true);
         mAppName.setText(app.getDisplayName());
         mAppIcon.setImageDrawable(app.getIcon());
+        mAppIcon.setAlpha(1.f);
         mComponentName = app.getComponentName();
 
         Drawable highlightedLayer = mContext.getDrawable(R.drawable.app_item_highlight);
@@ -237,7 +257,7 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
      * Transforms the app icon into the drop shadow's drop location in preparation for animateDrop,
      * which should be dispatched by AppGridItemAnimator shortly after prepareForDropAnimation.
      */
-    void prepareForDropAnimation() {
+    public void prepareForDropAnimation() {
         // dragOffset is the offset between dragged icon center and users finger touch point
         int dragOffsetX = mDragCallback.mDragPoint.x - mIconScaledSize / 2;
         int dragOffsetY = mDragCallback.mDragPoint.y - mIconScaledSize / 2;
@@ -258,8 +278,10 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         mAppIcon.setTranslationZ(1.f);
     }
 
-
-    void prepareForMoveAnimation() {
+    /**
+     * Resets Z axis translation of all views contained by the view holder.
+     */
+    public void resetTranslationZ() {
         mAppItemView.setTranslationZ(0.f);
         mAppIcon.setTranslationZ(0.f);
         mAppName.setTranslationZ(0.f);
@@ -268,7 +290,7 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
     /**
      * Animates the drop transition back to the original app icon location.
      */
-    ViewPropertyAnimator getDropAnimation() {
+    public ViewPropertyAnimator getDropAnimation() {
         return mAppIcon.animate()
                 .translationX(0).translationY(0)
                 .scaleX(1.f).scaleY(1.f)
@@ -286,6 +308,8 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         mAppIcon.setLongClickable(false);
         mAppIcon.setOnLongClickListener(null);
         mAppIcon.setOnTouchListener(null);
+        mAppIcon.setAlpha(0.f);
+        mAppIcon.setOutlineProvider(null);
 
         mAppIcon.getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
             @Override
@@ -326,7 +350,9 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
             mAppIcon.setAlpha(0.f);
             return;
         }
-        mAppIcon.setAlpha(1.f);
+        if (mHasAppMetadata) {
+            mAppIcon.setAlpha(1.f);
+        }
     }
 
 
@@ -422,6 +448,12 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         return mSnapCallback.getScrollState() == RecyclerView.SCROLL_STATE_IDLE;
     }
 
+    /**
+     * Returns whether this view holder's icon is visible to the user.
+     *
+     * Since the edge of the view holder from the previous/next may also receive drop events, a
+     * valid drop target should have its app icon be visible to the user.
+     */
     private boolean isTargetIconVisible() {
         if (mAppIcon == null || mAppIcon.getMeasuredWidth() == 0) {
             return false;
@@ -441,7 +473,7 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
     @AppItemBoundDirection
     int getClosestBoundDirection(float eventX, float eventY) {
         float cutoffThreshold = .25f;
-        if (isHorizontal(mAppGridOrientation)) {
+        if (isHorizontal(mPageOrientation)) {
             float horizontalPosition = eventX / mAppItemWidth;
             if (horizontalPosition < cutoffThreshold) {
                 return AppItemBoundDirection.LEFT;
@@ -459,7 +491,7 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         return AppItemBoundDirection.NONE;
     }
 
-    boolean isMostRecentlySelected() {
+    public boolean isMostRecentlySelected() {
         return mComponentName != null
                 && mComponentName.equals(mDragCallback.getPreviousSelectedComponent());
     }
