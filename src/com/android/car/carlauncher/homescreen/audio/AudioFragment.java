@@ -16,22 +16,27 @@
 
 package com.android.car.carlauncher.homescreen.audio;
 
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Size;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewStub;
 import android.widget.Chronometer;
+import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.android.car.apps.common.BitmapUtils;
 import com.android.car.apps.common.ImageUtils;
 import com.android.car.carlauncher.R;
 import com.android.car.carlauncher.homescreen.HomeCardFragment;
-import com.android.car.carlauncher.homescreen.HomeCardInterface;
 import com.android.car.carlauncher.homescreen.ui.CardContent;
 import com.android.car.carlauncher.homescreen.ui.DescriptiveTextWithControlsView;
+import com.android.car.carlauncher.homescreen.ui.SeekBarViewModel;
+import com.android.car.media.common.PlaybackControlsActionBar;
 
 
 /**
@@ -40,7 +45,17 @@ import com.android.car.carlauncher.homescreen.ui.DescriptiveTextWithControlsView
  */
 public class AudioFragment extends HomeCardFragment {
 
-    private AudioPresenter mPresenter;
+    /**
+     * Interface definition for a callback to be invoked when a media layout is inflated.
+     */
+    public interface OnMediaViewInitializedListener {
+
+        /**
+         * Called when a media layout is inflated.
+         */
+        void onMediaViewInitialized();
+    }
+
     private Chronometer mChronometer;
     private View mChronometerSeparator;
     private float mBlurRadius;
@@ -48,16 +63,40 @@ public class AudioFragment extends HomeCardFragment {
 
     // Views from card_content_media.xml, which is used only for the media card
     private View mMediaLayoutView;
+    private View mMediaControlBarView;
     private TextView mMediaTitle;
     private TextView mMediaSubtitle;
+    private ProgressBar mProgressBar;
+    private SeekBar mSeekBar;
+    private TextView mTimes;
+    private ViewGroup mSeekBarWithTimesContainer;
+    private int mSeekBarColor;
+    private MediaViewModel.PlaybackCallback mPlaybackCallback;
 
     private boolean mShowSeekBar;
+    private boolean mTrackingTouch;
 
-    @Override
-    public void setPresenter(HomeCardInterface.Presenter presenter) {
-        super.setPresenter(presenter);
-        mPresenter = (AudioPresenter) presenter;
-    }
+    private OnMediaViewInitializedListener mOnMediaViewInitializedListener;
+
+    private SeekBar.OnSeekBarChangeListener mOnSeekBarChangeListener =
+            new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+                    mTrackingTouch = true;
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                    if (mTrackingTouch && mPlaybackCallback != null) {
+                        mPlaybackCallback.seekTo(seekBar.getProgress());
+                    }
+                    mTrackingTouch = false;
+                }
+            };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -84,7 +123,7 @@ public class AudioFragment extends HomeCardFragment {
                         audioContent.getCenterControl(), audioContent.getRightControl());
                 updateAudioDuration(audioContent);
             }
-            updateSeekBarAndTimes(audioContent, false);
+            updateSeekBarAndTimes(audioContent.getSeekBarViewModel(), false);
         } else {
             super.updateContentViewInternal(content);
         }
@@ -95,6 +134,7 @@ public class AudioFragment extends HomeCardFragment {
         super.hideAllViews();
         getCardBackground().setVisibility(View.GONE);
         getMediaLayoutView().setVisibility(View.GONE);
+        getSeekbarWithTimesContainer().setVisibility(View.GONE);
     }
 
     private Chronometer getChronometer() {
@@ -113,11 +153,15 @@ public class AudioFragment extends HomeCardFragment {
             mMediaLayoutView = stub.inflate();
             mMediaTitle = mMediaLayoutView.findViewById(R.id.primary_text);
             mMediaSubtitle = mMediaLayoutView.findViewById(R.id.secondary_text);
-            View mediaControlBarView = mMediaLayoutView.findViewById(
+            mMediaControlBarView = mMediaLayoutView.findViewById(
                     R.id.media_playback_controls_bar);
-            mPresenter.initializeControlsActionBar(mediaControlBarView);
+            mOnMediaViewInitializedListener.onMediaViewInitialized();
         }
         return mMediaLayoutView;
+    }
+
+    public PlaybackControlsActionBar getPlaybackControlsActionBar() {
+        return (PlaybackControlsActionBar) mMediaControlBarView;
     }
 
     private void updateBackgroundImage(CardContent.CardBackgroundImage cardBackgroundImage) {
@@ -151,8 +195,8 @@ public class AudioFragment extends HomeCardFragment {
         mMediaTitle.setText(title);
         mMediaSubtitle.setText(subtitle);
         mMediaSubtitle.setVisibility(TextUtils.isEmpty(subtitle) ? View.GONE : View.VISIBLE);
-        if (getOptionalSeekbarWithTimesContainer() != null) {
-            getOptionalSeekbarWithTimesContainer().setVisibility(
+        if (getSeekbarWithTimesContainer() != null) {
+            getSeekbarWithTimesContainer().setVisibility(
                     mShowSeekBar ? View.VISIBLE : View.GONE);
         }
     }
@@ -167,5 +211,105 @@ public class AudioFragment extends HomeCardFragment {
             getChronometer().setVisibility(View.GONE);
             mChronometerSeparator.setVisibility(View.GONE);
         }
+    }
+
+    public void setOnMediaViewInitializedListener(
+            OnMediaViewInitializedListener onMediaViewInitializedListener) {
+        mOnMediaViewInitializedListener = onMediaViewInitializedListener;
+    }
+
+    /**
+     * Updates the seekbar/progress bar progress and times
+     */
+    public void updateProgress(SeekBarViewModel seekBarViewModel, boolean updateProgress) {
+        requireActivity().runOnUiThread(() -> {
+            updateSeekBarAndTimes(seekBarViewModel, updateProgress);
+        });
+    }
+
+    private void updateSeekBarAndTimes(SeekBarViewModel seekBarViewModel, boolean updateProgress) {
+        if (!isSeekbarWithTimesAvailable() || seekBarViewModel == null) {
+            return;
+        }
+
+        boolean shouldUseSeekBar = seekBarViewModel.isSeekEnabled();
+
+        if (updateProgress) {
+            ProgressBar progressBar = shouldUseSeekBar ? getSeekBar()
+                    : getProgressBar();
+            progressBar.setProgress(seekBarViewModel.getProgress(), /* animate = */ true);
+        } else {
+            SeekBar seekBar = getSeekBar();
+            ProgressBar progressBar = getProgressBar();
+            if (shouldUseSeekBar) {
+                updateSeekBar(seekBar, seekBarViewModel);
+            } else {
+                updateProgressBar(progressBar, seekBarViewModel);
+            }
+            seekBar.setVisibility(shouldUseSeekBar ? View.VISIBLE : View.GONE);
+            progressBar.setVisibility(shouldUseSeekBar ? View.GONE : View.VISIBLE);
+        }
+
+        if (seekBarViewModel.getTimes() == null || seekBarViewModel.getTimes().length() == 0) {
+            getTimes().setVisibility(View.GONE);
+        } else {
+            getTimes().setText(seekBarViewModel.getTimes());
+            getTimes().setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void updateProgressBar(ProgressBar progressBar, SeekBarViewModel seekBarViewModel) {
+        if (mSeekBarColor != seekBarViewModel.getSeekBarColor()) {
+            mSeekBarColor = seekBarViewModel.getSeekBarColor();
+            progressBar.setProgressTintList(ColorStateList.valueOf(mSeekBarColor));
+        }
+        progressBar.setProgress(seekBarViewModel.getProgress(), /* animate = */ true);
+    }
+
+    private void updateSeekBar(SeekBar seekBar, SeekBarViewModel seekBarViewModel) {
+        mPlaybackCallback = seekBarViewModel.getPlaybackCallback();
+        if (mSeekBarColor != seekBarViewModel.getSeekBarColor()) {
+            mSeekBarColor = seekBarViewModel.getSeekBarColor();
+            seekBar.setThumbTintList(ColorStateList.valueOf(mSeekBarColor));
+            seekBar.setProgressTintList(ColorStateList.valueOf(mSeekBarColor));
+        }
+        seekBar.setProgress(seekBarViewModel.getProgress(), /* animate = */ true);
+    }
+
+    private boolean isSeekbarWithTimesAvailable() {
+        return (getSeekbarWithTimesContainer() != null
+                && getSeekbarWithTimesContainer().getVisibility() == View.VISIBLE)
+                && getSeekBar() != null
+                && getTimes() != null;
+    }
+
+    private ProgressBar getProgressBar() {
+        if (mProgressBar == null) {
+            mProgressBar = getRootView().findViewById(R.id.optional_progress_bar);
+        }
+        return mProgressBar;
+    }
+
+    private SeekBar getSeekBar() {
+        if (mSeekBar == null) {
+            mSeekBar = getRootView().findViewById(R.id.optional_seek_bar);
+            mSeekBar.setOnSeekBarChangeListener(mOnSeekBarChangeListener);
+        }
+        return mSeekBar;
+    }
+
+    private TextView getTimes() {
+        if (mTimes == null) {
+            mTimes = getRootView().findViewById(R.id.optional_times);
+        }
+        return mTimes;
+    }
+
+    protected ViewGroup getSeekbarWithTimesContainer() {
+        if (mSeekBarWithTimesContainer == null) {
+            mSeekBarWithTimesContainer = getRootView().findViewById(
+                    R.id.optional_seek_bar_with_times_container);
+        }
+        return mSeekBarWithTimesContainer;
     }
 }

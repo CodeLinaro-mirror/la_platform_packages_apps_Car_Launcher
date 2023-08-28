@@ -517,7 +517,6 @@ public final class TaskViewManager {
      * Returns the {@link android.app.ActivityManager.RunningTaskInfo} of the top task inside the
      * launch root car task view.
      */
-    @VisibleForTesting
     public ActivityManager.RunningTaskInfo getTopTaskInLaunchRootTask() {
         return mLaunchRootCarTaskView != null
                 ? mLaunchRootCarTaskView.getTopTaskInLaunchRootTask() : null;
@@ -525,5 +524,64 @@ public final class TaskViewManager {
 
     boolean isReleased() {
         return mReleased;
+    }
+
+    /**
+     * Adds {@code activities} to allowed list of {@code carTaskView} if this car task view is a
+     * known {@link SemiControlledCarTaskView}.
+     */
+    public void addAllowListedActivities(@NonNull CarTaskView carTaskView,
+            List<ComponentName> activities) {
+        if (activities.size() == 0) {
+            if (DBG) {
+                Log.d(TAG, "No activity to add to allowlist");
+            }
+            return;
+        }
+        for (SemiControlledCarTaskView semiControlledCarTaskView: mSemiControlledTaskViews) {
+            if (semiControlledCarTaskView.equals(carTaskView)) {
+                semiControlledCarTaskView.addAllowListedActivities(activities);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Removes {@code activities} from allowed list of {@code carTaskView} if this CarTaskView is a
+     * known SemiControlledCarTaskView.
+     */
+    public void removeAllowListedActivities(@NonNull CarTaskView carTaskView,
+            List<ComponentName> activities) {
+        if (activities.size() == 0) {
+            if (DBG) {
+                Log.d(TAG, "No activity to remove from allowlist");
+            }
+            return;
+        }
+        for (SemiControlledCarTaskView semiControlledCarTaskView: mSemiControlledTaskViews) {
+            if (semiControlledCarTaskView.equals(carTaskView)) {
+                semiControlledCarTaskView.removeAllowListedActivities(activities);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Sets {@code activities} to be the allowed list of {@code carTaskView} if this CarTaskView
+     * is a known SemiControlledCarTaskView.
+     */
+    public void setAllowListedActivities(CarTaskView carTaskView, List<ComponentName> activities) {
+        if (activities.size() == 0) {
+            if (DBG) {
+                Log.d(TAG, "No activity to remove from allowlist");
+            }
+            return;
+        }
+        for (SemiControlledCarTaskView semiControlledCarTaskView: mSemiControlledTaskViews) {
+            if (semiControlledCarTaskView.equals(carTaskView)) {
+                semiControlledCarTaskView.setAllowListedActivities(activities);
+                return;
+            }
+        }
     }
 }
