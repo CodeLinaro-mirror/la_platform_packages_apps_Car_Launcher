@@ -16,19 +16,21 @@
 
 package com.android.car.docklib
 
+import android.content.ComponentName
+
 interface DockInterface {
     /**
      * called when an app is statically pinned to the Dock
      */
-    fun appPinned(componentName: String)
+    fun appPinned(componentName: ComponentName)
 
     /**
      * called when an app is launched
      */
-    fun appLaunched(componentName: String)
+    fun appLaunched(componentName: ComponentName)
 
     /**
      * called when an app should be removed from the Dock
      */
-    fun appUnpinned(componentName: String)
+    fun appUnpinned(componentName: ComponentName)
 }
