@@ -16,6 +16,4 @@
   -->
 
 <resources>
-    <!-- Package that contains the dock view -->
-    <string name="config_dockViewPackage" translatable="false">com.android.systemui</string>
 </resources>
