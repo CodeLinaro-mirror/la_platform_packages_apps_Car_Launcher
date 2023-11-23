@@ -16,24 +16,28 @@
 
 package com.android.car.docklib.events;
 
+import static com.android.car.dockutil.events.DockEventSenderHelper.EXTRA_COMPONENT;
+
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 
+import com.android.car.docklib.DockController;
 import com.android.car.docklib.DockInterface;
-
-import javax.inject.Inject;
+import com.android.car.dockutil.events.DockEvent;
 
 /**
  * BroadcastReceiver for Dock Events.
  */
 public class DockEventsReceiver extends BroadcastReceiver {
     // Extras key for the ComponentName associated with the Event
-    static final String EXTRA_COMPONENT = "EXTRA_COMPONENT";
     private final DockInterface mDockController;
 
-    @Inject
+    public DockEventsReceiver() {
+        this(new DockController());
+    }
+
     public DockEventsReceiver(DockInterface dockController) {
         mDockController = dockController;
     }
