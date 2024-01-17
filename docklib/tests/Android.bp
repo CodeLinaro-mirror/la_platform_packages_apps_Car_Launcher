@@ -21,9 +21,13 @@ package {
 android_test {
     name: "CarDockLibTests",
 
-    srcs: ["src/**/*.java"],
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.kt"
+    ],
 
     libs: [
+        "android.car",
         "android.test.base",
     ],
 
@@ -34,7 +38,9 @@ android_test {
     static_libs: [
         "androidx.test.runner",
         "androidx.test.ext.junit",
+        "androidx.arch.core_core-testing",
         "mockito-target-extended",
+        "mockito-kotlin2",
         "truth",
         "CarDockLib",
     ],
@@ -42,6 +48,8 @@ android_test {
     manifest: "AndroidManifest.xml",
 
     instrumentation_for: "CarDockLib",
+
+    platform_apis: true,
 
     dex_preopt: {
         enabled: false,

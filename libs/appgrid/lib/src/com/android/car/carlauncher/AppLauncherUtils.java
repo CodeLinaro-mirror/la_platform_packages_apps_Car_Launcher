@@ -20,6 +20,8 @@ import static android.car.settings.CarSettings.Secure.KEY_PACKAGES_DISABLED_ON_R
 import static android.car.settings.CarSettings.Secure.KEY_UNACCEPTED_TOS_DISABLED_APPS;
 import static android.car.settings.CarSettings.Secure.KEY_USER_TOS_ACCEPTED;
 
+import static com.android.car.carlauncher.hidden.HiddenApiAccess.hasBaseUserRestriction;
+
 import static java.lang.annotation.RetentionPolicy.SOURCE;
 
 import android.app.Activity;
@@ -40,7 +42,6 @@ import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.Process;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -56,6 +57,9 @@ import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.car.dockutil.events.DockEventSenderHelper;
+import com.android.car.dockutil.shortcuts.PinShortcutItem;
+import com.android.car.media.common.source.MediaSourceUtil;
 import com.android.car.ui.shortcutspopup.CarUiShortcutsPopup;
 
 import com.google.common.collect.Sets;
@@ -114,7 +118,7 @@ public class AppLauncherUtils {
      */
     public static void launchApp(Context context, Intent intent) {
         ActivityOptions options = ActivityOptions.makeBasic();
-        options.setLaunchDisplayId(context.getDisplayId());
+        options.setLaunchDisplayId(context.getDisplay().getDisplayId());
         context.startActivity(intent, options.toBundle());
     }
 
@@ -226,6 +230,8 @@ public class AppLauncherUtils {
             return EMPTY_APPS_INFO;
         }
 
+        boolean isDockEnabled = context.getResources().getBoolean(R.bool.config_enableDock);
+
         // Using new list since we require a mutable list to do removeIf.
         List<ResolveInfo> mediaServices = new ArrayList<>();
         mediaServices.addAll(
@@ -254,31 +260,27 @@ public class AppLauncherUtils {
                 ComponentName componentName = new ComponentName(packageName, className);
                 mediaServicesMap.put(componentName, info);
                 mEnabledPackages.add(packageName);
-                if (shouldAddToLaunchables(packageManager, componentName, appsToHide,
+                if (shouldAddToLaunchables(context, componentName, appsToHide,
                         customMediaComponents, appTypes, APP_TYPE_MEDIA_SERVICES)) {
-                    final boolean isDistractionOptimized = true;
-                    boolean isDisabledByTos = tosDisabledPackages.contains(packageName);
-
-                    Intent intent = new Intent(Car.CAR_INTENT_ACTION_MEDIA_TEMPLATE);
-                    intent.putExtra(Car.CAR_EXTRA_MEDIA_COMPONENT, componentName.flattenToString());
-
                     CharSequence displayName = info.serviceInfo.loadLabel(packageManager);
                     AppMetaData appMetaData = new AppMetaData(
                             displayName,
                             componentName,
                             info.serviceInfo.loadIcon(packageManager),
-                            isDistractionOptimized,
+                            /* isDistractionOptimized= */ true,
                             /* isMirroring = */ false,
-                            isDisabledByTos,
+                            /* isDisabledByTos= */ tosDisabledPackages.contains(packageName),
                             contextArg -> {
                                 if (openMediaCenter) {
-                                    AppLauncherUtils.launchApp(contextArg, intent);
+                                    AppLauncherUtils.launchApp(contextArg,
+                                            createMediaLaunchIntent(componentName));
                                 } else {
                                     selectMediaSourceAndFinish(contextArg, componentName,
                                             carMediaManager);
                                 }
                             },
-                            buildShortcuts(packageName, displayName, shortcutsListener));
+                            buildShortcuts(componentName, displayName, shortcutsListener,
+                                    isDockEnabled));
                     launchablesMap.put(componentName, appMetaData);
                 }
             }
@@ -288,22 +290,18 @@ public class AppLauncherUtils {
         if ((appTypes & APP_TYPE_LAUNCHABLES) != 0) {
             for (LauncherActivityInfo info : availableActivities) {
                 ComponentName componentName = info.getComponentName();
-                String packageName = componentName.getPackageName();
-                mEnabledPackages.add(packageName);
-                if (shouldAddToLaunchables(packageManager, componentName, appsToHide,
+                mEnabledPackages.add(componentName.getPackageName());
+                if (shouldAddToLaunchables(context, componentName, appsToHide,
                         customMediaComponents, appTypes, APP_TYPE_LAUNCHABLES)) {
                     boolean isDistractionOptimized =
-                            isActivityDistractionOptimized(carPackageManager, packageName,
-                                    info.getName());
-                    boolean isDisabledByTos = tosDisabledPackages.contains(packageName);
-
-                    Intent intent = new Intent(Intent.ACTION_MAIN)
-                            .setComponent(componentName)
-                            .addCategory(Intent.CATEGORY_LAUNCHER)
-                            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            isActivityDistractionOptimized(carPackageManager,
+                                    componentName.getPackageName(), info.getName());
+                    boolean isDisabledByTos = tosDisabledPackages
+                            .contains(componentName.getPackageName());
 
                     CharSequence displayName = info.getLabel();
-                    boolean isMirroring = packageName.equals(mirroringAppPkgName);
+                    boolean isMirroring = componentName.getPackageName()
+                            .equals(mirroringAppPkgName);
                     AppMetaData appMetaData = new AppMetaData(
                             displayName,
                             componentName,
@@ -312,14 +310,16 @@ public class AppLauncherUtils {
                             isMirroring,
                             isDisabledByTos,
                             contextArg -> {
-                                if (packageName.equals(mirroringAppPkgName)) {
+                                if (componentName.getPackageName().equals(mirroringAppPkgName)) {
                                     Log.d(TAG, "non-media service package name "
                                             + "equals mirroring pkg name");
                                 }
                                 AppLauncherUtils.launchApp(contextArg,
-                                        isMirroring ? mirroringAppRedirect : intent);
+                                        isMirroring ? mirroringAppRedirect :
+                                                createAppLaunchIntent(componentName));
                             },
-                            buildShortcuts(packageName, displayName, shortcutsListener));
+                            buildShortcuts(componentName, displayName, shortcutsListener,
+                                    isDockEnabled));
                     launchablesMap.put(componentName, appMetaData);
                 }
             }
@@ -330,18 +330,13 @@ public class AppLauncherUtils {
                 String packageName = info.activityInfo.packageName;
                 String className = info.activityInfo.name;
                 ComponentName componentName = new ComponentName(packageName, className);
-                if (!shouldAddToLaunchables(packageManager, componentName, appsToHide,
+                if (!shouldAddToLaunchables(context, componentName, appsToHide,
                         customMediaComponents, appTypes, APP_TYPE_LAUNCHABLES)) {
                     continue;
                 }
                 boolean isDistractionOptimized =
                         isActivityDistractionOptimized(carPackageManager, packageName, className);
                 boolean isDisabledByTos = tosDisabledPackages.contains(packageName);
-
-                Intent intent = new Intent(Intent.ACTION_MAIN)
-                        .setComponent(componentName)
-                        .addCategory(Intent.CATEGORY_LAUNCHER)
-                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
                 CharSequence displayName = info.activityInfo.loadLabel(packageManager);
                 AppMetaData appMetaData = new AppMetaData(
@@ -354,10 +349,9 @@ public class AppLauncherUtils {
                         contextArg -> {
                             packageManager.setApplicationEnabledSetting(packageName,
                                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED, 0);
-                            /* Fetch the current enabled setting to make sure the setting is synced
-                             * before launching the activity. Otherwise, the activity may not
-                             * launch.
-                             */
+                            // Fetch the current enabled setting to make sure the setting is synced
+                            // before launching the activity. Otherwise, the activity may not
+                            // launch.
                             if (packageManager.getApplicationEnabledSetting(packageName)
                                     != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
                                 throw new IllegalStateException(
@@ -365,9 +359,11 @@ public class AppLauncherUtils {
                                                 + "]");
                             }
                             Log.i(TAG, "Successfully enabled package [" + packageName + "]");
-                            AppLauncherUtils.launchApp(contextArg, intent);
+                            AppLauncherUtils.launchApp(contextArg,
+                                    createAppLaunchIntent(componentName));
                         },
-                        buildShortcuts(packageName, displayName, shortcutsListener));
+                        buildShortcuts(componentName, displayName, shortcutsListener,
+                                isDockEnabled));
                 launchablesMap.put(componentName, appMetaData);
             }
 
@@ -423,64 +419,22 @@ public class AppLauncherUtils {
         }
     }
 
-    /**
-     * Determine if the given media browse service is supported through media templates
-     */
-    public static boolean isMediaTemplate(PackageManager pm, ComponentName mbsComponentName) {
-        Bundle metaData = null;
-        try {
-            metaData = pm.getServiceInfo(
-                    mbsComponentName,
-                    PackageManager.GET_META_DATA)
-                    .metaData;
-        } catch (PackageManager.NameNotFoundException e) {
-            Log.e(TAG, "Service for Component " + mbsComponentName + " was not found");
-            return false;
-        }
-
-        if (metaData != null && metaData.containsKey(ANDROIDX_CAR_APP_LAUNCHABLE)) {
-            boolean launchable = metaData.getBoolean(ANDROIDX_CAR_APP_LAUNCHABLE);
-            if (Log.isLoggable(TAG, Log.DEBUG)) {
-                Log.d(TAG, "MBS for " + mbsComponentName
-                        + " is opted " + (launchable ? "in" : "out"));
-            }
-            return launchable;
-        }
-
-        // No explicit declaration. For backward compatibility, keep MBS only for media apps
-        String packageName = mbsComponentName.getPackageName();
-        try {
-            if (isLegacyMediaApp(pm, packageName)) {
-                Log.d(TAG, "Including " + mbsComponentName + "  for media app " + packageName);
-                return true;
-            }
-        } catch (PackageManager.NameNotFoundException e) {
-            Log.e(TAG, "Package " + packageName + " was not found");
-        }
-        Log.d(TAG, "Skipping MBS for " + mbsComponentName
-                + " belonging to non media app " + packageName);
-        return false;
-    }
-
-    /** Determine if it's a legacy media app that doesn't have a launcher activity*/
-    private static boolean isLegacyMediaApp(
-            PackageManager pm, String packageName) throws PackageManager.NameNotFoundException {
-        // a media app doesn't have a launcher activity
-        return pm.getLaunchIntentForPackage(packageName) == null;
-    }
-
-    private static Consumer<Pair<Context, View>> buildShortcuts(String packageName,
-            CharSequence displayName, ShortcutsListener shortcutsListener) {
+    private static Consumer<Pair<Context, View>> buildShortcuts(
+            ComponentName componentName, CharSequence displayName,
+            ShortcutsListener shortcutsListener, boolean isDockEnabled) {
         return pair -> {
-            CarUiShortcutsPopup carUiShortcutsPopup = new CarUiShortcutsPopup.Builder()
-                    .addShortcut(
-                            buildForceStopShortcut(packageName, displayName, pair.first,
-                                    shortcutsListener)
-                    )
-                    .addShortcut(buildAppInfoShortcut(packageName, pair.first))
-                    .build(pair.first,
-                            pair.second
-                    );
+            CarUiShortcutsPopup.Builder carUiShortcutsPopupBuilder =
+                    new CarUiShortcutsPopup.Builder()
+                            .addShortcut(buildForceStopShortcut(componentName.getPackageName(),
+                                    displayName, pair.first, shortcutsListener))
+                            .addShortcut(buildAppInfoShortcut(componentName.getPackageName(),
+                                    pair.first));
+            if (isDockEnabled) {
+                carUiShortcutsPopupBuilder
+                        .addShortcut(buildPinToDockShortcut(componentName, pair.first));
+            }
+            CarUiShortcutsPopup carUiShortcutsPopup = carUiShortcutsPopupBuilder
+                    .build(pair.first, pair.second);
 
             carUiShortcutsPopup.show();
             shortcutsListener.onShortcutsShow(carUiShortcutsPopup);
@@ -541,6 +495,15 @@ public class AppLauncherUtils {
         };
     }
 
+    private static CarUiShortcutsPopup.ShortcutItem buildPinToDockShortcut(
+            ComponentName componentName, Context context) {
+        DockEventSenderHelper mHelper = new DockEventSenderHelper(context);
+        return new PinShortcutItem(context.getResources(), /* isItemPinned= */ false,
+                /* pinItemClickDelegate= */ () -> mHelper.sendPinEvent(componentName),
+                /* unpinItemClickDelegate= */ () -> mHelper.sendUnpinEvent(componentName)
+        );
+    }
+
     /**
      * Force stops an app
      * <p>Note: Uses hidden apis<p/>
@@ -562,7 +525,7 @@ public class AppLauncherUtils {
     }
 
     private static boolean isCurrentMediaSource(CarMediaManager carMediaManager,
-            String packageName, @CarMediaManager.MediaSourceMode int mode) {
+            String packageName, int mode) {
         ComponentName componentName = carMediaManager.getMediaSource(mode);
         if (componentName == null) {
             //There is no current media source.
@@ -577,7 +540,7 @@ public class AppLauncherUtils {
      */
     private static void maybeReplaceMediaSource(CarMediaManager carMediaManager, String packageName,
             Map<ComponentName, ResolveInfo> allMediaServices,
-            @CarMediaManager.MediaSourceMode int mode) {
+            int mode) {
         if (!isCurrentMediaSource(carMediaManager, packageName, mode)) {
             return;
         }
@@ -611,7 +574,7 @@ public class AppLauncherUtils {
             return false;
         }
         UserHandle user = UserHandle.getUserHandleForUid(appInfo.uid);
-        if (userManager.hasBaseUserRestriction(restriction, user)) {
+        if (hasBaseUserRestriction(userManager, restriction, user)) {
             Log.d(TAG, " Disabled because " + user + " has " + restriction
                     + " restriction");
             return true;
@@ -718,7 +681,7 @@ public class AppLauncherUtils {
         return activities;
     }
 
-    private static boolean shouldAddToLaunchables(PackageManager packageManager,
+    private static boolean shouldAddToLaunchables(Context context,
             @NonNull ComponentName componentName,
             @NonNull Set<String> appsToHide,
             @NonNull Set<String> customMediaComponents,
@@ -749,7 +712,7 @@ public class AppLauncherUtils {
                     return true;
                 }
                 // Only Keep MBS that is a media template
-                return isMediaTemplate(packageManager, componentName);
+                return new MediaSourceUtil(context).isMediaTemplate(componentName);
             // Process activities
             case APP_TYPE_LAUNCHABLES:
                 return true;
@@ -822,6 +785,18 @@ public class AppLauncherUtils {
         return TextUtils.isEmpty(settingsValue) ? new ArraySet<>()
                 : new ArraySet<>(Arrays.asList(settingsValue.split(
                         TOS_DISABLED_APPS_SEPARATOR)));
+    }
+
+    private static Intent createMediaLaunchIntent(ComponentName componentName) {
+        return new Intent(Car.CAR_INTENT_ACTION_MEDIA_TEMPLATE)
+                .putExtra(Car.CAR_EXTRA_MEDIA_COMPONENT, componentName.flattenToString());
+    }
+
+    private static Intent createAppLaunchIntent(ComponentName componentName) {
+        return new Intent(Intent.ACTION_MAIN)
+                .setComponent(componentName)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     }
 
     /**

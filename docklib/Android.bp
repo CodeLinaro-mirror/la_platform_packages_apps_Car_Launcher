@@ -17,7 +17,6 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-
 android_library {
     name: "CarDockLib",
     srcs: [
@@ -27,15 +26,19 @@ android_library {
 
     resource_dirs: ["res"],
 
+    libs: ["android.car"],
+
     static_libs: [
-        "dagger2",
-        "jsr330",
+        "androidx.recyclerview_recyclerview",
+        "androidx.core_core-animation-nodeps",
+        "car-ui-lib-no-overlayable",
         "androidx.lifecycle_lifecycle-extensions",
+        "com.google.android.material_material",
+        "CarDockUtilLib",
+        "SystemUISharedLib"
     ],
 
-    plugins: [
-        "dagger2-compiler",
-    ],
+    platform_apis: true,
 
     manifest: "AndroidManifest.xml",
 }
