@@ -35,6 +35,7 @@ android_library {
         "androidx.lifecycle_lifecycle-extensions",
         "com.google.android.material_material",
         "CarDockUtilLib",
+        "CarLauncherCommon",
         "SystemUISharedLib",
         "iconloader",
     ],
