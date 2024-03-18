@@ -16,35 +16,36 @@
 
 package com.android.car.docklib.view
 
+import android.car.media.CarMediaManager
 import android.content.ComponentName
-import android.content.res.ColorStateList
+import android.content.Context
 import android.graphics.Color
 import android.graphics.Point
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.os.Build
-import android.util.Log
 import android.util.TypedValue
 import android.view.View
-import androidx.annotation.ColorInt
-import androidx.core.animation.Animator
 import androidx.recyclerview.widget.RecyclerView
 import com.android.car.docklib.DockInterface
 import com.android.car.docklib.R
 import com.android.car.docklib.data.DockAppItem
-import com.android.car.docklib.view.animation.ExcitementAnimationHelper
 import com.google.android.material.imageview.ShapeableImageView
-import kotlin.math.floor
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 
 class DockItemViewHolder(
         private val dockController: DockInterface,
         itemView: View,
+        private val userContext: Context,
+        private val carMediaManager: CarMediaManager?,
 ) : RecyclerView.ViewHolder(itemView) {
 
     companion object {
         private const val TAG = "DockItemViewHolder"
         private val DEBUG = Build.isDebuggable()
-        private const val INITIAL_COLOR_FILTER_ALPHA = 0f
 
         /**
          * Cleanup callback is used to reset/remove any pending views so it should be called after
@@ -54,48 +55,56 @@ class DockItemViewHolder(
          * todo(b/319285942): Remove fixed timer
          */
         private const val CLEANUP_DELAY = 500L
+        private const val MAX_WAIT_TO_COMPUTE_ICON_COLOR_MS = 500L
     }
 
-    private val staticIconStrokeWidth: Float
-    private val dynamicIconStrokeWidth: Float
-    private val excitedIconStrokeWidth: Float
-    private val defaultIconStrokeColor: Int
-    private val staticIconStrokeColor: Int
-    private val excitedIconStrokeColor: Int
-    private val excitedIconColorFilterAlpha: Float
-    private val appIcon: ShapeableImageView
-    private val exciteAnimationDuration: Int
+    private val staticIconStrokeWidth = itemView.resources
+            .getDimension(R.dimen.icon_stroke_width_static)
+    private val defaultIconColor = itemView.resources.getColor(
+            R.color.icon_default_color,
+            null // theme
+    )
+    private val appIcon: ShapeableImageView = itemView.requireViewById(R.id.dock_app_icon)
+    private val iconColorExecutor = Executors.newSingleThreadExecutor()
     private val dockDragListener: DockDragListener
+    private val dockItemViewController: DockItemViewController
     private var dockItem: DockAppItem? = null
     private var dockItemLongClickListener: DockItemLongClickListener? = null
-    private var exciteAnimator: Animator? = null
+    private var droppedIconColor: Int = defaultIconColor
+    private var iconColorFuture: Future<Int>? = null
 
     init {
-        staticIconStrokeWidth = itemView.resources.getDimension(R.dimen.icon_stroke_width_static)
-        dynamicIconStrokeWidth = itemView.resources.getDimension(R.dimen.icon_stroke_width_dynamic)
-        excitedIconStrokeWidth = itemView.resources.getDimension(R.dimen.icon_stroke_width_excited)
-        defaultIconStrokeColor = itemView.resources.getColor(
-                R.color.icon_default_stroke_color,
-                null // theme
-        )
-        staticIconStrokeColor = itemView.resources.getColor(
-                R.color.icon_static_stroke_color,
-                null // theme
-        )
-        excitedIconStrokeColor = itemView.resources.getColor(
-                R.color.icon_excited_stroke_color,
-                null // theme
-        )
-        appIcon = itemView.requireViewById(R.id.dock_app_icon)
         val typedValue = TypedValue()
         itemView.resources.getValue(
                 R.dimen.icon_colorFilter_alpha_excited,
                 typedValue,
                 true // resolveRefs
         )
-        this.excitedIconColorFilterAlpha = typedValue.float
-        exciteAnimationDuration =
-                itemView.resources.getInteger(R.integer.excite_icon_animation_duration_ms)
+        val excitedIconColorFilterAlpha = typedValue.float
+
+        dockItemViewController = DockItemViewController(
+            staticIconStrokeWidth,
+            dynamicIconStrokeWidth = itemView.resources
+                .getDimension(R.dimen.icon_stroke_width_dynamic),
+            excitedIconStrokeWidth = itemView.resources
+                .getDimension(R.dimen.icon_stroke_width_excited),
+            staticIconStrokeColor = itemView.resources.getColor(
+                R.color.icon_static_stroke_color,
+                null // theme
+            ),
+            excitedIconStrokeColor = itemView.resources.getColor(
+                R.color.icon_excited_stroke_color,
+                null // theme
+            ),
+            defaultIconColor,
+            excitedColorFilter = PorterDuffColorFilter(
+                Color.argb(excitedIconColorFilterAlpha, 0f, 0f, 0f),
+                PorterDuff.Mode.DARKEN
+            ),
+            excitedIconColorFilterAlpha,
+            exciteAnimationDuration = itemView.resources
+                .getInteger(R.integer.excite_icon_animation_duration_ms)
+        )
 
         dockDragListener = DockDragListener(
                 resources = this.itemView.resources,
@@ -109,23 +118,38 @@ class DockItemViewHolder(
                         dockController.appPinned(componentName, bindingAdapterPosition)
                     }
 
-                    override fun dropAnimationScaleDownComplete(componentName: ComponentName) {
-                        // todo: strokeColor should be primary color of the new pinned app
-                        val highlightColor = Color.rgb(240, 126, 117)
-                        updateAppIcon(
-                                strokeColor = highlightColor,
-                                excitedIconStrokeWidth,
-                                colorFilterAlpha = null,
-                                colorFilterColor = highlightColor
+                    override fun dropAnimationsStarting(componentName: ComponentName) {
+                        dockItemViewController.setExcited(isExcited = false)
+                        // todo(b/320543972): Increase efficiency of dropping
+                        iconColorFuture = iconColorExecutor.submit(
+                                Callable { dockController.getIconColorWithScrim(componentName) }
                         )
                     }
 
+                    override fun dropAnimationScaleDownComplete(componentName: ComponentName) {
+                        droppedIconColor = iconColorFuture?.get(
+                                MAX_WAIT_TO_COMPUTE_ICON_COLOR_MS,
+                                TimeUnit.MILLISECONDS
+                        ) ?: defaultIconColor
+                        dockItemViewController.setUpdating(
+                            isUpdating = true,
+                            updatingColor = droppedIconColor
+                        )
+                        dockItemViewController.updateViewBasedOnState(appIcon)
+                    }
+
+                    override fun dropAnimationComplete(componentName: ComponentName) {
+                        dockItemViewController.setUpdating(isUpdating = false, updatingColor = null)
+                    }
+
                     override fun exciteView() {
-                        animateAppIconExcited(isExciting = true)
+                        dockItemViewController.setExcited(isExcited = true)
+                        dockItemViewController.animateAppIconExcited(appIcon)
                     }
 
                     override fun resetView() {
-                        animateAppIconExcited(isExciting = false)
+                        dockItemViewController.setExcited(isExcited = false)
+                        dockItemViewController.animateAppIconExcited(appIcon)
                     }
 
                     override fun getDropContainerLocation(): Point {
@@ -156,18 +180,21 @@ class DockItemViewHolder(
      */
     fun bind(dockAppItem: DockAppItem, callback: Runnable? = null) {
         dockItem = dockAppItem
-        exciteAnimator?.cancel()
-        exciteAnimator = null
-        resetAppIcon(dockAppItem.type)
         itemTypeChanged(dockAppItem)
         appIcon.contentDescription = dockAppItem.name
         appIcon.setImageDrawable(dockAppItem.icon)
         appIcon.postDelayed({ callback?.run() }, CLEANUP_DELAY)
-        appIcon.setOnClickListener { dockController.launchApp(dockAppItem.component) }
+        appIcon.setOnClickListener {
+            dockController.launchApp(dockAppItem.component, dockAppItem.isMediaApp)
+        }
         dockItemLongClickListener = DockItemLongClickListener(
                 dockAppItem,
                 pinItemClickDelegate = { dockController.appPinned(dockAppItem.id) },
                 unpinItemClickDelegate = { dockController.appUnpinned(dockAppItem.id) },
+            dockAppItem.component,
+            userContext,
+            carMediaManager,
+            dockController.getMediaServiceComponents()
         )
         appIcon.onLongClickListener = dockItemLongClickListener
 
@@ -176,128 +203,14 @@ class DockItemViewHolder(
 
     fun itemTypeChanged(dockAppItem: DockAppItem) {
         dockItem = dockAppItem
-        // todo(b/314859977): dynamic strokeColor should be decided by the app primary color
-        updateAppIcon(
-                strokeColor = getStrokeColorFromType(dockAppItem.type),
-                strokeWidth = getStrokeWidthFromType(dockAppItem.type)
-        )
+        when (dockAppItem.type) {
+            DockAppItem.Type.DYNAMIC ->
+                dockItemViewController.setDynamic(dockAppItem.iconColorWithScrim)
+
+            DockAppItem.Type.STATIC -> dockItemViewController.setStatic()
+        }
+        dockItemViewController.updateViewBasedOnState(appIcon)
         dockItemLongClickListener?.setDockAppItem(dockAppItem)
-    }
-
-    /**
-     * Animate the app icon to be excited or reset after being excited.
-     * @param isExciting {@code true} if the view is being excited, {@code false} if view is being
-     * reset
-     */
-    private fun animateAppIconExcited(
-            isExciting: Boolean,
-            itemType: DockAppItem.Type = dockItem?.type ?: DockAppItem.Type.STATIC
-    ) {
-        val isAnimationOngoing = exciteAnimator?.isRunning ?: false
-        if (DEBUG) {
-            Log.d(
-                    TAG,
-                    "Excite animation{ isExciting: $isExciting, " +
-                            "isAnimationOngoing: $isAnimationOngoing }"
-            )
-        }
-        exciteAnimator?.cancel()
-
-        val toStrokeWidth: Float
-        val toContentPadding: Int
-        val toColorFilterAlpha: Float
-        val toStrokeColor: Int
-        val successCallback: Function<Unit>
-        if (isExciting) {
-            toStrokeWidth = excitedIconStrokeWidth
-            toContentPadding = getContentPaddingFromStrokeWidth(excitedIconStrokeWidth)
-            toColorFilterAlpha = excitedIconColorFilterAlpha
-            toStrokeColor = excitedIconStrokeColor
-            successCallback = {
-                exciteAnimator = null
-                exciteAppIcon()
-            }
-        } else {
-            toStrokeWidth = getStrokeWidthFromType(itemType)
-            toContentPadding = getContentPaddingFromStrokeWidth(toStrokeWidth)
-            toColorFilterAlpha = INITIAL_COLOR_FILTER_ALPHA
-            toStrokeColor = getStrokeColorFromType(itemType)
-            successCallback = {
-                exciteAnimator = null
-                resetAppIcon(itemType)
-            }
-        }
-        val failureCallback = { exciteAnimator = null }
-
-        exciteAnimator = ExcitementAnimationHelper.getExcitementAnimator(
-                appIcon,
-                exciteAnimationDuration.toLong(),
-                toStrokeWidth,
-                toStrokeColor,
-                toContentPadding,
-                toColorFilterAlpha,
-                successCallback,
-                failureCallback
-        )
-        exciteAnimator?.start()
-    }
-
-    private fun exciteAppIcon() {
-        updateAppIcon(
-                excitedIconStrokeColor,
-                excitedIconStrokeWidth,
-                getContentPaddingFromStrokeWidth(excitedIconStrokeWidth),
-                excitedIconColorFilterAlpha
-        )
-    }
-
-    private fun resetAppIcon(itemType: DockAppItem.Type) {
-        updateAppIcon(getStrokeColorFromType(itemType), getStrokeWidthFromType(itemType))
-    }
-
-    /**
-     * null colorFilterAlpha and null colorFilterColor value results in colorFilter to be null
-     */
-    private fun updateAppIcon(
-            strokeColor: Int,
-            strokeWidth: Float? = null,
-            contentPadding: Int? = null,
-            colorFilterAlpha: Float? = null,
-            @ColorInt colorFilterColor: Int? = null,
-    ) {
-        if (DEBUG) {
-            Log.d(
-                    TAG,
-                    "updateAppIcon at $bindingAdapterPosition { " +
-                            "strokeColor: $strokeColor " +
-                            "strokeWidth: $strokeWidth " +
-                            "contentPadding: $contentPadding " +
-                            "colorFilterAlpha: $colorFilterAlpha " +
-                            "colorFilterColor: $colorFilterColor" +
-                            "}"
-            )
-        }
-        appIcon.strokeColor = ColorStateList.valueOf(strokeColor)
-        val sw = strokeWidth ?: appIcon.strokeWidth
-        appIcon.strokeWidth = sw
-        val cp = contentPadding ?: getContentPaddingFromStrokeWidth(sw)
-        appIcon.setContentPadding(cp, cp, cp, cp)
-        val cfc = colorFilterColor ?: colorFilterAlpha?.let { Color.argb(it, 0f, 0f, 0f) }
-        appIcon.colorFilter =
-                cfc?.let { color -> PorterDuffColorFilter(color, PorterDuff.Mode.DARKEN) }
-    }
-
-    private fun getContentPaddingFromStrokeWidth(strokeWidth: Float): Int =
-            floor(strokeWidth / 2).toInt()
-
-    private fun getStrokeColorFromType(itemType: DockAppItem.Type) = when (itemType) {
-        DockAppItem.Type.DYNAMIC -> defaultIconStrokeColor
-        DockAppItem.Type.STATIC -> staticIconStrokeColor
-    }
-
-    private fun getStrokeWidthFromType(itemType: DockAppItem.Type) = when (itemType) {
-        DockAppItem.Type.DYNAMIC -> dynamicIconStrokeWidth
-        DockAppItem.Type.STATIC -> staticIconStrokeWidth
     }
 
     // TODO: b/301484526 Add animation when app icon is changed

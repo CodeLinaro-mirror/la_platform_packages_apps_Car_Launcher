@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,16 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.content.pm.PackageManager.ComponentInfoFlags
+import android.content.pm.ServiceInfo
+import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.android.car.docklib.data.DockAppItem
+import com.android.launcher3.icons.IconFactory
 import com.google.common.truth.Truth.assertThat
 import java.util.UUID
 import org.junit.Assert.assertThrows
@@ -35,6 +39,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
@@ -57,10 +62,21 @@ class DockViewModelTest {
 
     private lateinit var items: List<DockAppItem>
     private lateinit var model: DockViewModel
-    private val contextMock =
-            mock<Context> { on { getString(eq(R.string.pin_failed_no_spots)) } doReturn TOAST_STR }
-    private val packageManagerMock = mock<PackageManager> {}
+    private val resourcesMock = mock<Resources> {}
+    private val contextMock = mock<Context> {
+        on { getString(eq(R.string.pin_failed_no_spots)) } doReturn TOAST_STR
+        on { resources } doReturn resourcesMock
+    }
+    private val packageManagerMock = mock<PackageManager> {
+        on {
+            queryIntentServices(any<Intent>(), any<PackageManager.ResolveInfoFlags>())
+        } doReturn listOf()
+    }
     private var carPackageManagerMock = mock<CarPackageManager> {}
+    private var bitmapMock = mock<Bitmap> {}
+    private var iconFactoryMock = mock<IconFactory> {
+        on { createScaledBitmap(any<Drawable>(), anyInt()) } doReturn bitmapMock
+    }
 
     @Before
     fun setUp() {
@@ -72,12 +88,13 @@ class DockViewModelTest {
                 userId = CURRENT_USER_ID,
                 launcherActivities =
                 createTestComponentList(
-                        pkgPrefix = "LAUNCHER_PKG", classPrefix = "LAUNCHER_CLASS"),
+                        pkgPrefix = "LAUNCHER_PKG", classPrefix = "LAUNCHER_CLASS").toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doNothing().whenever(model).showToast(any())
@@ -95,10 +112,12 @@ class DockViewModelTest {
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
                 launcherActivities =
-                createTestComponentList(pkgPrefix = "LAUNCHER_PKG", classPrefix = "LAUNCHER_CLASS"),
+                createTestComponentList(
+                    pkgPrefix = "LAUNCHER_PKG", classPrefix = "LAUNCHER_CLASS").toMutableSet(),
                 defaultPinnedItems = defaultPinnedItems,
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         )
 
@@ -354,12 +373,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = listOf(),
+                launcherActivities = mutableSetOf(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(List<ActivityManager.RunningTaskInfo>(0) { return })
@@ -378,12 +398,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = cmpList,
+                launcherActivities = cmpList.toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = cmpList.toSet(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(List<ActivityManager.RunningTaskInfo>(0) { return })
@@ -402,12 +423,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = listOf(launcherAppComponent),
+                launcherActivities = mutableSetOf(launcherAppComponent),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(List<ActivityManager.RunningTaskInfo>(0) { return })
@@ -430,12 +452,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = launcherActivities,
+                launcherActivities = launcherActivities.toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(List<ActivityManager.RunningTaskInfo>(0) { return })
@@ -459,12 +482,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = launcherActivities,
+                launcherActivities = launcherActivities.toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(createTestRunningTaskInfoList(userId = CURRENT_USER_ID + 1))
@@ -490,12 +514,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = launcherActivities,
+                launcherActivities = launcherActivities.toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(excludedComponent),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(createTestRunningTaskInfoList(component = excludedComponent))
@@ -522,12 +547,13 @@ class DockViewModelTest {
                 packageManager = packageManagerMock,
                 carPackageManager = carPackageManagerMock,
                 userId = CURRENT_USER_ID,
-                launcherActivities = launcherActivities,
+                launcherActivities = launcherActivities.toMutableSet(),
                 defaultPinnedItems =
                 createTestComponentList(
                         pkgPrefix = "DEFAULT_PKG", classPrefix = "DEFAULT_CLASS"),
                 excludedComponents = setOf(),
                 excludedPackages = setOf(),
+                iconFactory = iconFactoryMock,
                 observer = { items = it },
         ))
         doReturn(createTestRunningTaskInfoList(component = recentTaskComponent))
@@ -650,27 +676,61 @@ class DockViewModelTest {
 
     private fun createTestComponentList(
             pkgPrefix: String,
-            classPrefix: String
+            classPrefix: String,
+            isService: Boolean = false,
     ): List<ComponentName> {
         val launcherActivities = mutableListOf<ComponentName>()
         for (i in 1..10) {
-            launcherActivities.add(createNewComponent(pkg = "$pkgPrefix$i", "$classPrefix$i"))
+            launcherActivities.add(
+                createNewComponent(pkg = "$pkgPrefix$i", "$classPrefix$i", isService)
+            )
         }
         return launcherActivities
     }
 
-    private fun createNewComponent(pkg: String, clazz: String): ComponentName {
+    private fun createNewComponent(
+        pkg: String,
+        clazz: String,
+        isService: Boolean = false
+    ): ComponentName {
         val component = ComponentName(pkg, clazz)
-        val ai = createMockActivityInfo(component)
-        whenever(packageManagerMock.getActivityInfo(eq(component), any<ComponentInfoFlags>()))
-                .thenReturn(ai)
+        val pi = createMockPackageInfo(component, isService)
+        whenever(packageManagerMock.getPackageInfo(eq(pkg), any<PackageManager.PackageInfoFlags>()))
+            .thenReturn(pi)
         return component
+    }
+
+    private fun createMockPackageInfo(
+        component: ComponentName,
+        isService: Boolean = false
+    ): PackageInfo {
+        val pi = mock<PackageInfo> {}
+        if (isService) {
+            pi.services = arrayOf(createMockServiceInfo(component))
+        } else {
+            pi.activities = arrayOf(createMockActivityInfo(component))
+        }
+        return pi
     }
 
     private fun createMockActivityInfo(component: ComponentName): ActivityInfo {
         val icon = mock<Drawable> {}
-        val ai = mock<ActivityInfo> { on { loadIcon(any()) } doReturn icon }
+        val ai = mock<ActivityInfo> {
+            on { loadIcon(any()) } doReturn icon
+            on { loadLabel(any()) } doReturn "${component.packageName}-${component.className}"
+            on { componentName } doReturn component
+        }
         ai.name = "${component.packageName}-${component.className}"
         return ai
+    }
+
+    private fun createMockServiceInfo(component: ComponentName): ServiceInfo {
+        val icon = mock<Drawable> {}
+        val si = mock<ServiceInfo> {
+            on { loadIcon(any()) } doReturn icon
+            on { componentName } doReturn component
+        }
+        si.name = "${component.packageName}-${component.className}"
+        return si
     }
 }

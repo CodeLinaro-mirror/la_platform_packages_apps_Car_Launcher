@@ -29,6 +29,7 @@ import android.view.View
 import androidx.annotation.OpenForTesting
 import androidx.annotation.VisibleForTesting
 import androidx.core.animation.Animator
+import androidx.core.animation.PathInterpolator
 import androidx.core.animation.PropertyValuesHolder
 import androidx.core.animation.ValueAnimator
 import com.android.car.docklib.R
@@ -142,6 +143,7 @@ open class DockDragListener(
         dragEvent: DragEvent,
         component: ComponentName
     ) {
+        callback.dropAnimationsStarting(component)
         val dropContainerLocation = callback.getDropContainerLocation()
         // todo(b/312718542): hidden api(offsetX and offsetY) usage
         val fromX: Float = dropContainerLocation.x + (dragEvent.x - dragEvent.offsetX)
@@ -199,6 +201,7 @@ open class DockDragListener(
             }
         }))
         scaleUpAnimator.addListener(getAnimatorListener(onAnimationEnd = { isCancelled ->
+            callback.dropAnimationComplete(component)
             if (!isCancelled) callback.dropSuccessful(component, getCleanUpCallback(surfaceControl))
         }))
 
@@ -254,6 +257,7 @@ open class DockDragListener(
                 pvhScaleY
             )
         animator.setDuration(animationDuration)
+        animator.interpolator = PathInterpolator(0f, 0f, 0f, 1f)
         val trx = Transaction()
         animator.addUpdateListener(getAnimatorUpdateListener(surfaceControl, trx))
         animator.addListener(getAnimatorListener { trx.close() })
@@ -343,9 +347,19 @@ open class DockDragListener(
         fun dropSuccessful(componentName: ComponentName, cleanupCallback: Runnable? = null) {}
 
         /**
+         * Drop animations about to start.
+         */
+        fun dropAnimationsStarting(componentName: ComponentName) {}
+
+        /**
          * Drop animation scale down completed.
          */
         fun dropAnimationScaleDownComplete(componentName: ComponentName) {}
+
+        /**
+         * Drop animation completed.
+         */
+        fun dropAnimationComplete(componentName: ComponentName) {}
 
         /**
          * Excite the view to indicate the item can be dropped in this position when dragged inside

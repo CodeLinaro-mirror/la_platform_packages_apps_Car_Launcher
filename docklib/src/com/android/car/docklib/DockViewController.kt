@@ -16,8 +16,10 @@
 
 package com.android.car.docklib
 
+import android.app.ActivityOptions
 import android.car.Car
 import android.car.content.pm.CarPackageManager
+import android.car.media.CarMediaManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -26,10 +28,12 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.getSystemService
 import com.android.car.docklib.events.DockEventsReceiver
-import com.android.car.docklib.events.DockPackageRemovedReceiver
+import com.android.car.docklib.events.DockPackageChangeReceiver
+import com.android.car.docklib.media.MediaUtils
 import com.android.car.docklib.task.DockTaskStackChangeListener
 import com.android.car.docklib.view.DockAdapter
 import com.android.car.docklib.view.DockView
+import com.android.launcher3.icons.IconFactory
 import com.android.systemui.shared.system.TaskStackChangeListeners
 import java.lang.ref.WeakReference
 import java.util.UUID
@@ -55,18 +59,21 @@ class DockViewController(
     private val dockViewWeakReference: WeakReference<DockView>
     private val dockViewModel: DockViewModel
     private val dockEventsReceiver: DockEventsReceiver
-    private val dockPackageRemovedReceiver: DockPackageRemovedReceiver
+    private val dockPackageChangeReceiver: DockPackageChangeReceiver
     private val taskStackChangeListeners: TaskStackChangeListeners
     private val dockTaskStackChangeListener: DockTaskStackChangeListener
+    private val launcherApps = userContext.getSystemService<LauncherApps>()
 
     init {
         if (DEBUG) Log.d(TAG, "Init DockViewController for user ${userContext.userId}")
-        val adapter = DockAdapter(this)
+        val adapter = DockAdapter(this, userContext)
         dockView.setAdapter(adapter)
         dockViewWeakReference = WeakReference(dockView)
-        val launcherActivities = userContext.getSystemService<LauncherApps>()
+
+        val launcherActivities = launcherApps
                 ?.getActivityList(null, userContext.user)
                 ?.map { it.componentName }
+                ?.toMutableSet() ?: mutableSetOf()
 
         dockViewModel = DockViewModel(
                 maxItemsInDock = numItems,
@@ -81,6 +88,7 @@ class DockViewController(
                         .mapNotNull(ComponentName::unflattenFromString).toHashSet(),
                 excludedPackages = dockView.resources
                         .getStringArray(R.array.config_packagesExcludedFromDock).toHashSet(),
+                iconFactory = IconFactory.obtain(dockView.context)
         ) { updatedApps ->
             dockViewWeakReference.get()?.getAdapter()?.submitList(updatedApps)
                     ?: throw NullPointerException("the View referenced does not exist")
@@ -92,15 +100,17 @@ class DockViewController(
         ) { car, ready ->
             run {
                 if (ready) {
-                    val carPackageManager = car.getCarManager(CarPackageManager::class.java)
-                    carPackageManager?.let { carPM ->
+                    car.getCarManager(CarPackageManager::class.java)?.let { carPM ->
                         dockViewModel.setCarPackageManager(carPM)
+                    }
+                    car.getCarManager(CarMediaManager::class.java)?.let { carMM ->
+                        adapter.setCarMediaManager(carMM)
                     }
                 }
             }
         }
         dockEventsReceiver = DockEventsReceiver.registerDockReceiver(userContext, this)
-        dockPackageRemovedReceiver = DockPackageRemovedReceiver.registerReceiver(userContext, this)
+        dockPackageChangeReceiver = DockPackageChangeReceiver.registerReceiver(userContext, this)
         dockTaskStackChangeListener =
                 DockTaskStackChangeListener(userContext.userId, this)
         taskStackChangeListeners = TaskStackChangeListeners.getInstance()
@@ -112,7 +122,7 @@ class DockViewController(
         if (DEBUG) Log.d(TAG, "Destroy called")
         car.disconnect()
         userContext.unregisterReceiver(dockEventsReceiver)
-        userContext.unregisterReceiver(dockPackageRemovedReceiver)
+        userContext.unregisterReceiver(dockPackageChangeReceiver)
         taskStackChangeListeners.unregisterTaskStackListener(dockTaskStackChangeListener)
         dockViewModel.destroy()
     }
@@ -133,15 +143,34 @@ class DockViewController(
     override fun appLaunched(componentName: ComponentName) =
             dockViewModel.addDynamicItem(componentName)
 
-    override fun launchApp(componentName: ComponentName) {
-        val intent = Intent(Intent.ACTION_MAIN)
+    override fun launchApp(componentName: ComponentName, isMediaApp: Boolean) {
+        val intent = if (isMediaApp) {
+            MediaUtils.createLaunchIntent(componentName)
+        } else {
+            Intent(Intent.ACTION_MAIN)
                 .setComponent(componentName)
                 .addCategory(Intent.CATEGORY_LAUNCHER)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
+        }
+        val options = ActivityOptions.makeBasic()
+        options.setLaunchDisplayId(userContext.display.displayId)
         // todo(b/312718542): hidden api(context.startActivityAsUser) usage
-        userContext.startActivityAsUser(intent, userContext.user)
+        userContext.startActivityAsUser(intent, options.toBundle(), userContext.user)
     }
 
+    override fun getIconColorWithScrim(componentName: ComponentName) =
+            dockViewModel.getIconColorWithScrim(componentName)
+
     override fun packageRemoved(packageName: String) = dockViewModel.removeItems(packageName)
+
+    override fun packageAdded(packageName: String) {
+        dockViewModel.addMediaComponents(packageName)
+        dockViewModel.addLauncherComponents(
+            launcherApps?.getActivityList(packageName, userContext.user)
+                ?.map { it.componentName } ?: listOf()
+        )
+    }
+
+    override fun getMediaServiceComponents(): Set<ComponentName> =
+        dockViewModel.getMediaServiceComponents()
 }
