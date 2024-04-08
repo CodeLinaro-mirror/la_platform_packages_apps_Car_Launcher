@@ -42,7 +42,6 @@ import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -53,6 +52,7 @@ import com.android.car.carlauncher.AppGridPageSnapper.AppGridPageSnapCallback;
 import com.android.car.carlauncher.AppItemDragShadowBuilder;
 import com.android.car.carlauncher.AppMetaData;
 import com.android.car.carlauncher.R;
+import com.android.car.carlaunchercommon.toasts.NonDrivingOptimizedLaunchFailedToast;
 
 /**
  * App item view holder that contains the app icon and name.
@@ -153,7 +153,8 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
      *
      * @param app AppMetaData to be displayed. Pass {@code null} will empty out the viewHolder.
      */
-    public void bind(@Nullable AppMetaData app, @NonNull BindInfo bindInfo) {
+    public void bind(@Nullable AppMetaData app, @NonNull BindInfo bindInfo,
+            boolean ignoreUxRestriction) {
         resetViewHolder();
         if (app == null) {
             return;
@@ -182,8 +183,8 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
         // previous page, so we need to rebind the app with the correct visibility.
         setStateSelected(mComponentName.equals(mDragCallback.mSelectedComponent));
 
-        boolean isLaunchableDistractionOptimized =
-                !isDistractionOptimizationRequired || app.getIsDistractionOptimized();
+        boolean isLaunchableDistractionOptimized = !isDistractionOptimizationRequired
+                || app.getIsDistractionOptimized() || ignoreUxRestriction;
         boolean isDisabledByTos = app.getIsDisabledByTos();
         boolean isLaunchable = isLaunchableDistractionOptimized || isDisabledByTos;
 
@@ -253,14 +254,9 @@ public class AppItemViewHolder extends RecyclerView.ViewHolder {
                 });
             }
         } else {
-            String warningText = mContext.getResources()
-                    .getString(R.string.driving_toast_text, app.getDisplayName());
-            View.OnClickListener appLaunchListener = new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    Toast.makeText(mContext, warningText, Toast.LENGTH_LONG).show();
-                }
-            };
+            View.OnClickListener appLaunchListener = v ->
+                    NonDrivingOptimizedLaunchFailedToast.Companion.showToast(
+                            mContext, app.getDisplayName());
             mAppItemView.setOnClickListener(appLaunchListener);
             mAppIcon.setOnClickListener(appLaunchListener);
 
