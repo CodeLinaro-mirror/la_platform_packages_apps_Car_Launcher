@@ -109,7 +109,6 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
     private boolean mShowAllApps = true;
     private boolean mShowToolbar = true;
     private final Set<String> mHiddenApps = new HashSet<>();
-    private final Set<String> mCustomMediaComponents = new HashSet<>();
     private PackageManager mPackageManager;
     private UsageStatsManager mUsageStatsManager;
     private AppInstallUninstallReceiver mInstallUninstallReceiver;
@@ -162,7 +161,7 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
         CONTROL_BAR, DEFAULT, FULL
     }
 
-    private enum Mode {
+    public enum Mode {
         ALL_APPS(R.string.app_launcher_title_all_apps,
                 APP_TYPE_LAUNCHABLES + APP_TYPE_MEDIA_SERVICES,
                 true),
@@ -202,6 +201,7 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
                             .isRequiresDistractionOptimization();
                 }
                 mAdapter.setIsDistractionOptimizationRequired(isDistractionOptimizationRequired);
+                mAdapter.setMode(mMode);
                 // set listener to update the app grid components and apply interaction restrictions
                 // when driving state changes
                 mCarUxRestrictionsManager.registerListener(restrictionInfo -> {
@@ -255,13 +255,11 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
             Set<String> appsToHide = mShowAllApps ? Collections.emptySet() : mHiddenApps;
             mAppsInfo = AppLauncherUtils.getLauncherApps(getApplicationContext(),
                     appsToHide,
-                    mCustomMediaComponents,
                     mMode.mAppTypes,
                     mMode.mOpenMediaCenter,
                     getSystemService(LauncherApps.class),
                     mCarPackageManager,
                     mPackageManager,
-                    new AppLauncherUtils.VideoAppPredicate(mPackageManager),
                     mCarMediaManager,
                     AppGridActivity.this,
                     mMirroringPackageName,
@@ -294,8 +292,6 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
                         mAdapter.setLauncherItems(launcherItems);
                         mNextScrollDestination = mSnapCallback.getSnapPosition();
                         updateScrollState();
-                        //TODO: b/275079533 Disable drag and drop ability in AppGrid with
-                        // only Media apps
                         if (mMode == Mode.ALL_APPS) {
                             mLauncherModel.maybeSaveAppsOrder();
                         }
@@ -304,8 +300,6 @@ public class AppGridActivity extends AppCompatActivity implements InsetsChangedL
         );
         mCar = Car.createCar(this, mCarConnectionListener);
         mHiddenApps.addAll(Arrays.asList(getResources().getStringArray(R.array.hidden_apps)));
-        mCustomMediaComponents.addAll(
-                Arrays.asList(getResources().getStringArray(R.array.custom_media_packages)));
         setContentView(R.layout.app_grid_activity);
         updateMode();
 
