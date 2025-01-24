@@ -25,7 +25,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.WindowInsets
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.android.car.carlauncher.AppLauncherUtils
 import com.android.car.carlauncher.Flags
@@ -51,13 +53,28 @@ class MapTosActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        theme.applyStyle(R.style.MapTosActivityThemeOverlay, true)
         setContentView(R.layout.map_tos_activity)
         reviewButton = findViewById(R.id.review_button)
         reviewButton.setOnClickListener {
             val tosIntent = AppLauncherUtils.getIntentForTosAcceptanceFlow(it.context)
             log("Launching tos acceptance activity")
             AppLauncherUtils.launchApp(it.context, tosIntent)
+        }
+
+        if (Flags.tosRestrictionsEnabled()) {
+            // Enable edge-to-edge display
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.decorView.rootView.setOnApplyWindowInsetsListener { v, insets ->
+                val appliedInsets = insets.getInsets(WindowInsets.Type.systemBars())
+                v.setPadding(
+                    appliedInsets.left,
+                    0, // top
+                    appliedInsets.right,
+                    0 // bottom
+                )
+                insets.inset(appliedInsets)
+            }
         }
 
         setupCarUxRestrictionsListener()
