@@ -20,14 +20,8 @@
             <solid android:color="?oemColorSurfaceContainerLow"/>
             <corners android:topLeftRadius="?mediaCardCornerRadius"
                 android:topRightRadius="?mediaCardCornerRadius"
-                android:bottomLeftRadius="0dp" android:bottomRightRadius="0dp"/>
-        </shape>
-    </item>
-    <item
-        android:height="?mediaCardCornerRadius"
-        android:gravity="bottom">
-        <shape>
-            <solid android:color="?oemColorSurface" />
+                android:bottomLeftRadius="?mediaCardCornerRadius"
+                android:bottomRightRadius="?mediaCardCornerRadius"/>
         </shape>
     </item>
 </layer-list>
