@@ -23,6 +23,8 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.util.SizeF;
+import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -36,30 +38,38 @@ import java.util.List;
  * It handles custom sizing and context creation for widget inflation,
  * particularly for widgets containing remote compose documents.
  */
-public class CarAppWidgetHostView extends AppWidgetHostView {
+public class CarAppWidgetHostView extends BaseLauncherAppWidgetHostView {
     private static final String TAG = "CarAppWidgetHostView";
     private AppWidgetProviderInfo mWidgetInfo = null;
+    // Flag to suppress default padding applied by the AppWidgetHostView.
+    // This is necessary to prevent the system's default widget padding from overriding
+    // our custom layout margins and ensuring precise control over the widget's appearance.
+    private boolean mDisableSetPadding = false;
     private int mWidth;
     private int mHeight;
-    private final int mHorizontalMargin;
+    private final float mScaleFactor;
 
     public CarAppWidgetHostView(Context context) {
         super(context);
-        mHorizontalMargin = (int) getResources().getDimension(R.dimen.widget_horizontal_margin);
+        mScaleFactor = getResources().getFloat(R.dimen.widget_scale_factor);
+        setScaleX(mScaleFactor);
+        setScaleY(mScaleFactor);
     }
 
     /**
      * Binds the widget with its provider information and sets its initial size.
      *
-     * @param info The {@link AppWidgetProviderInfo} for the widget.
-     * @param width The width of the host view.
+     * @param info   The {@link AppWidgetProviderInfo} for the widget.
+     * @param width  The width of the host view.
      * @param height The height of the host view.
      */
     public void bind(AppWidgetProviderInfo info, int width, int height) {
         mWidgetInfo = info;
 
-        mWidth = info.maxResizeWidth > 0 ? Math.min(width, info.maxResizeWidth) : width;
-        mHeight = info.maxResizeHeight > 0 ? Math.min(height, info.maxResizeHeight) : height;
+        mWidth = Math.round((info.maxResizeWidth > 0 ? Math.min(width, info.maxResizeWidth) : width)
+                / mScaleFactor);
+        mHeight = Math.round((info.maxResizeHeight > 0 ? Math.min(height, info.maxResizeHeight)
+                : height) / mScaleFactor);
 
         Bundle options = new Bundle();
         options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, mWidth);
@@ -85,22 +95,56 @@ public class CarAppWidgetHostView extends AppWidgetHostView {
     }
 
     @Override
+    public void setAppWidget(int appWidgetId, AppWidgetProviderInfo info) {
+        mDisableSetPadding = true;
+        super.setAppWidget(appWidgetId, info);
+        mDisableSetPadding = false;
+    }
+
+    @Override
+    public void setPadding(int left, int top, int right, int bottom) {
+        if (!mDisableSetPadding) {
+            super.setPadding(left, top, right, bottom);
+        }
+    }
+
+    @Override
     public void updateAppWidget(RemoteViews remoteViews) {
         if (remoteViews != null) {
             Context contextToUse = Token.createOemStyledContext(getRemoteContext());
             View view = remoteViews.apply(contextToUse, this);
 
-            // Force the view to match the layout params of the host view.
-            LayoutParams lp = new LayoutParams(mWidth, mHeight);
-            lp.leftMargin = mHorizontalMargin;
-            lp.rightMargin = mHorizontalMargin;
-            view.setLayoutParams(lp);
-
             removeAllViews();
             prepareView(view);
+
+            LayoutParams lp = (LayoutParams) getLayoutParams();
+            lp.width = mWidth;
+            lp.height = mHeight;
+            lp.gravity = Gravity.CENTER;
+            setLayoutParams(lp);
+
             addView(view);
         } else {
             super.updateAppWidget(remoteViews);
         }
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        switch (ev.getAction()) {
+            case MotionEvent.ACTION_DOWN ->
+                // Request the parent to not intercept touch events for the duration of this
+                // gesture.
+                // This ensures that scrollable widgets (like Lists) can receive touch events
+                // and scroll internally.
+                // Note: This has the side effect that starting a drag on a non-scrollable widget
+                // will not scroll the parent page. This is a known trade-off to support
+                // scrollable widgets.
+                    getParent().requestDisallowInterceptTouchEvent(true);
+            case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                // Re-allow interception when the gesture finishes
+                    getParent().requestDisallowInterceptTouchEvent(false);
+        }
+        return super.onInterceptTouchEvent(ev);
     }
 }
