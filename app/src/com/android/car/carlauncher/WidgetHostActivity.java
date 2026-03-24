@@ -71,6 +71,7 @@ public class WidgetHostActivity extends AppCompatActivity {
     private final IntentHandler mIntentHandler = intent -> {
         if (intent != null) {
             ActivityOptions options = ActivityOptions.makeBasic();
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent, options.toBundle());
         }
     };
@@ -148,12 +149,7 @@ public class WidgetHostActivity extends AppCompatActivity {
                     @Override
                     public void onGlobalLayout() {
                         mCardContainer.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-
-                        if (Flags.appWidgetHost()) {
-                            loadAndDisplayWidgets();
-                        } else {
-                            adjustVisuals(/* widgetAdded= */ false);
-                        }
+                        loadAndDisplayWidgets();
                     }
                 });
     }
@@ -206,7 +202,7 @@ public class WidgetHostActivity extends AppCompatActivity {
             } else {
                 Bundle options =
                         ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(
-                                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS)
+                                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE)
                                 .toBundle();
                 mAppWidgetHost.startAppWidgetConfigureActivityForResult(this, widgetId,
                         /* intentFlags= */ 0, REQUEST_CONFIGURE, options);
@@ -318,7 +314,7 @@ public class WidgetHostActivity extends AppCompatActivity {
                 case RESULT_NEEDS_CONFIGURE -> {
                     Bundle options =
                             ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(
-                                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS)
+                                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE)
                                     .toBundle();
                     mAppWidgetHost.startAppWidgetConfigureActivityForResult(this, appWidgetId,
                             /* intentFlags= */ 0, REQUEST_CONFIGURE, options);
