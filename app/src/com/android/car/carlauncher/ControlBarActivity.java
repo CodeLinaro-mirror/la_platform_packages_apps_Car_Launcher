@@ -81,7 +81,7 @@ public class ControlBarActivity extends FragmentActivity {
         if (mHomeCardModules == null) {
             mHomeCardModules = new ArraySet<>();
             for (String providerClassName : getResources().getStringArray(
-                    R.array.config_homeCardModuleClasses_horizontal)) {
+                    R.array.config_homeCardModuleClasses)) {
                 try {
                     long reflectionStartTime = System.currentTimeMillis();
                     HomeCardModule cardModule = (HomeCardModule)
