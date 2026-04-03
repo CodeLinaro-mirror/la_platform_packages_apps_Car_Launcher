@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import android.app.Activity;
 import android.car.test.mocks.AbstractExtendedMockitoTestCase;
 import android.content.ComponentName;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -62,6 +63,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExternalResource;
+import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 
 import java.net.URISyntaxException;
@@ -90,11 +93,44 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     // TOS disabled app list is empty when TOS has been accepted or uninitialized.
     private static final String EMPTY_TOS_DISABLED_APPS = "";
 
+    private static final int TOS_STATE_UNINITIALIZED = 0;
+    private static final int TOS_STATE_UNACCEPTED = 1;
+    private static final int TOS_STATE_ACCEPTED = 2;
+
     @Override
     protected void onSessionBuilder(CustomMockitoSessionBuilder session) {
         session.spyStatic(AppLauncherUtils.class);
         session.spyStatic(CarLauncherUtils.class);
     }
+
+    @Rule
+    public final TestRule mTosSettingsRule = new ExternalResource() {
+        private int mInitialTosState;
+        private String mInitialTosDisabledApps;
+
+        @Override
+        protected void before() {
+            ContentResolver cr = mContext.getContentResolver();
+            mInitialTosState = Settings.Secure.getInt(
+                    cr, KEY_USER_TOS_ACCEPTED, TOS_STATE_UNINITIALIZED);
+            mInitialTosDisabledApps = Settings.Secure.getString(
+                    cr, KEY_UNACCEPTED_TOS_DISABLED_APPS);
+
+            // Force an accepted state by default for tests.
+            Settings.Secure.putInt(cr, KEY_USER_TOS_ACCEPTED, TOS_STATE_ACCEPTED);
+            Settings.Secure.putString(
+                    cr, KEY_UNACCEPTED_TOS_DISABLED_APPS, EMPTY_TOS_DISABLED_APPS);
+        }
+
+        @Override
+        protected void after() {
+            ContentResolver cr = mContext.getContentResolver();
+            Settings.Secure.putInt(
+                    cr, KEY_USER_TOS_ACCEPTED, mInitialTosState);
+            Settings.Secure.putString(
+                    cr, KEY_UNACCEPTED_TOS_DISABLED_APPS, mInitialTosDisabledApps);
+        }
+    };
 
     @Before
     public void setUp() {
@@ -224,7 +260,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void onCreate_whenTosAccepted_tosContentObserverIsNull() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 2);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_ACCEPTED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 EMPTY_TOS_DISABLED_APPS);
 
@@ -240,7 +277,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void onCreate_whenTosNotAccepted_tosContentObserverIsNotNull() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 1);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNACCEPTED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 NON_EMPTY_TOS_DISABLED_APPS);
 
@@ -256,7 +294,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void onCreate_whenTosNotInitialized_tosContentObserverIsNotNull() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 0);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNINITIALIZED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 EMPTY_TOS_DISABLED_APPS);
 
@@ -272,7 +311,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void recreate_afterTosIsAccepted_tosStateContentObserverIsNull() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 0);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNINITIALIZED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 NON_EMPTY_TOS_DISABLED_APPS);
 
@@ -282,7 +322,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
             assertNotNull(activity.mTosContentObserver); // Content observer is setup
 
             // Accept TOS
-            Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 2);
+            Settings.Secure.putInt(
+                    mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_ACCEPTED);
             Settings.Secure.putString(mContext.getContentResolver(),
                     KEY_UNACCEPTED_TOS_DISABLED_APPS, EMPTY_TOS_DISABLED_APPS);
             activity.mTosContentObserver.onChange(true);
@@ -304,7 +345,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void recreate_afterTosIsInitialized_tosStateContentObserverIsNotNull() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 0);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNINITIALIZED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 EMPTY_TOS_DISABLED_APPS);
 
@@ -314,7 +356,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
             assertNotNull(activity.mTosContentObserver); // Content observer is setup
 
             // Initialize TOS
-            Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 1);
+            Settings.Secure.putInt(
+                    mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNACCEPTED);
             Settings.Secure.putString(mContext.getContentResolver(),
                     KEY_UNACCEPTED_TOS_DISABLED_APPS, NON_EMPTY_TOS_DISABLED_APPS);
             activity.mTosContentObserver.onChange(true);
@@ -327,7 +370,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void recreate_afterTosIsInitialized_releaseTaskView() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 0);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNINITIALIZED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 EMPTY_TOS_DISABLED_APPS);
 
@@ -340,7 +384,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
             assertNotNull(oldMapsIntent);
 
             // Initialize TOS
-            Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 1);
+            Settings.Secure.putInt(
+                    mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNACCEPTED);
             Settings.Secure.putString(mContext.getContentResolver(),
                     KEY_UNACCEPTED_TOS_DISABLED_APPS, NON_EMPTY_TOS_DISABLED_APPS);
             activity.mTosContentObserver.onChange(true);
@@ -355,7 +400,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
     @Test
     public void recreate_afterTosIsAccepted_releaseTaskView() {
         TestableContext mContext = new TestableContext(InstrumentationRegistry.getContext());
-        Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 1);
+        Settings.Secure.putInt(
+                mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_UNACCEPTED);
         Settings.Secure.putString(mContext.getContentResolver(), KEY_UNACCEPTED_TOS_DISABLED_APPS,
                 NON_EMPTY_TOS_DISABLED_APPS);
 
@@ -368,7 +414,8 @@ public class CarLauncherTest extends AbstractExtendedMockitoTestCase {
             assertNotNull(oldMapsIntent);
 
             // Accept TOS
-            Settings.Secure.putInt(mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, 2);
+            Settings.Secure.putInt(
+                    mContext.getContentResolver(), KEY_USER_TOS_ACCEPTED, TOS_STATE_ACCEPTED);
             Settings.Secure.putString(mContext.getContentResolver(),
                     KEY_UNACCEPTED_TOS_DISABLED_APPS, EMPTY_TOS_DISABLED_APPS);
             activity.mTosContentObserver.onChange(true);
