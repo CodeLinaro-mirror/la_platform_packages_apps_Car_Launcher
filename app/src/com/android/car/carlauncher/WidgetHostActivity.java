@@ -27,6 +27,7 @@ import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.UserManager;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -96,6 +97,50 @@ public class WidgetHostActivity extends AppCompatActivity {
     };
     private int mWidgetMediaCardSize;
     private AppWidgetManager mAppWidgetManager;
+    private UserManager mUserManager;
+    private boolean mUserUnlocked;
+    private boolean mIsLayoutComplete;
+    private boolean mWidgetsLoaded;
+
+    private final BroadcastReceiver mUserUnlockedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) {
+                return;
+            }
+            if (DEBUG) {
+                Log.d(TAG, "User unlocked, attempting to load widgets");
+            }
+            mUserUnlocked = true;
+            tryLoadWidgets();
+            unregisterReceiver(mUserUnlockedReceiver);
+        }
+    };
+
+    private void tryLoadWidgets() {
+        if (!mUserUnlocked) {
+            if (DEBUG) {
+                Log.d(TAG, "tryLoadWidgets: user still locked");
+            }
+            return;
+        }
+        if (!mIsLayoutComplete) {
+            if (DEBUG) {
+                Log.d(TAG, "tryLoadWidgets: layout not complete");
+            }
+            return;
+        }
+        if (mWidgetsLoaded) {
+            return;
+        }
+
+        if (DEBUG) {
+            Log.d(TAG, "Conditions met, loading widgets");
+        }
+        mWidgetsLoaded = true;
+        loadAndDisplayWidgets();
+    }
+
     private CarAppWidgetHost mAppWidgetHost;
     private LinearLayout mWidgetContainer;
     private ViewGroup mCardContainer;
@@ -127,6 +172,15 @@ public class WidgetHostActivity extends AppCompatActivity {
         MediaLaunchRouter.getInstance().registerMediaLaunchHandler(mMediaMediaLaunchHandler);
         InCallIntentRouter.getInstance().registerInCallIntentHandler(mIntentHandler);
 
+        mUserManager = getSystemService(UserManager.class);
+        mUserUnlocked = mUserManager.isUserUnlocked();
+        if (!mUserUnlocked) {
+            if (DEBUG) {
+                Log.d(TAG, "User locked, waiting for unlock");
+            }
+            registerReceiver(mUserUnlockedReceiver, new IntentFilter(Intent.ACTION_USER_UNLOCKED));
+        }
+
         mAppWidgetManager = AppWidgetManager.getInstance(this);
         mAppWidgetHost = new CarAppWidgetHost(this,
                 getResources().getInteger(R.integer.config_appwidget_host_id));
@@ -149,7 +203,8 @@ public class WidgetHostActivity extends AppCompatActivity {
                     @Override
                     public void onGlobalLayout() {
                         mCardContainer.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-                        loadAndDisplayWidgets();
+                        mIsLayoutComplete = true;
+                        tryLoadWidgets();
                     }
                 });
     }
@@ -172,6 +227,13 @@ public class WidgetHostActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (!mWidgetsLoaded && !mUserUnlocked) {
+            try {
+                unregisterReceiver(mUserUnlockedReceiver);
+            } catch (IllegalArgumentException e) {
+                // Receiver was already unregistered or not registered
+            }
+        }
         mAppWidgetInfoMap.forEach((id, info) -> mAppWidgetHost.deleteAppWidgetId(id));
         mAppWidgetInfoMap.clear();
     }
@@ -224,22 +286,15 @@ public class WidgetHostActivity extends AppCompatActivity {
     }
 
     private void initializeCards() {
-        boolean isTopCardInUse = false;
-        boolean isBottomCardInUse = false;
+        int homeCardRes = mIsLandscape ? R.array.config_homeCardModuleClasses_horizontal
+                : R.array.config_homeCardModuleClasses_vertical;
         if (mHomeCardModules == null) {
             mHomeCardModules = new ArraySet<>();
-            for (String providerClassName : getResources().getStringArray(
-                    R.array.config_homeCardModuleClasses)) {
+            for (String providerClassName : getResources().getStringArray(homeCardRes)) {
                 try {
                     long reflectionStartTime = System.currentTimeMillis();
                     HomeCardModule cardModule = (HomeCardModule) Class.forName(
                             providerClassName).getDeclaredConstructor().newInstance();
-                    if (cardModule.getCardResId() == R.id.top_card) {
-                        isTopCardInUse = true;
-                    }
-                    if (cardModule.getCardResId() == R.id.bottom_card) {
-                        isBottomCardInUse = true;
-                    }
                     cardModule.setViewModelProvider(new ViewModelProvider(/* owner= */this));
                     mHomeCardModules.add(cardModule);
                     if (DEBUG) {
@@ -252,17 +307,17 @@ public class WidgetHostActivity extends AppCompatActivity {
                 }
             }
         }
-        if (!isTopCardInUse) {
-            Log.e(TAG, "Top card is not supported in widget host.");
-        }
-        if (!isBottomCardInUse) {
-            View bottomCard = findViewById(R.id.bottom_card);
-            if (bottomCard != null) {
-                bottomCard.setVisibility(View.GONE);
+        boolean hasBottomCard = mHomeCardModules.stream().peek(cardModule -> {
+            if (cardModule.getCardResId() == R.id.top_card) {
+                Log.e(TAG, "Top card is not supported in widget host.");
             }
+        }).anyMatch(cardModule -> cardModule.getCardResId() == R.id.bottom_card);
+        View bottomCard = findViewById(R.id.bottom_card);
+        if (bottomCard != null) {
+            bottomCard.setVisibility(hasBottomCard ? View.VISIBLE : View.GONE);
         }
-        if (!isBottomCardInUse && mCardContainer != null) {
-            mCardContainer.setVisibility(View.GONE);
+        if (mCardContainer != null) {
+            mCardContainer.setVisibility(hasBottomCard ? View.VISIBLE : View.GONE);
         }
         FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
         for (HomeCardModule cardModule : mHomeCardModules) {
